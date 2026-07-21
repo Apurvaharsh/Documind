@@ -52,3 +52,33 @@ body {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
+
+/* Typing indicator shown while an answer is being generated. */
+.typing-dot {
+  animation: typing 1.4s infinite ease-in-out both;
+}
+.typing-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+/* Respect a reduced-motion preference: keep the dots visible but still. */
+@media (prefers-reduced-motion: reduce) {
+  .typing-dot {
+    animation: none;
+    transform: scale(1);
+  }
+}

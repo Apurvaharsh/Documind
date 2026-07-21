@@ -8,7 +8,7 @@ from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
-from services.pdf_service import extract_text, chunk_text
+from services.pdf_service import extract_pages, chunk_pages
 from services.embedding_service import generate_embeddings, create_embeddings
 from services.qdrant_service import search_qdrant, ensure_collection, delete_document
 from services.llm_service import generate_response
@@ -52,6 +52,10 @@ class SourceChunk(BaseModel):
     fileName: str | None = None
     documentId: str | None = None
     chunkIndex: int | None = None
+    # None for documents ingested before page tracking was added.
+    page: int | None = None
+    # Short quote so the UI can show why this chunk was retrieved.
+    excerpt: str | None = None
     score: float
 
 
@@ -67,6 +71,16 @@ class IngestResponse(BaseModel):
     message: str
 
 
+def excerpt_of(text: str | None, limit: int = 160) -> str | None:
+    """First line or so of a chunk, for the source cards. Whitespace in PDFs is
+    messy, so collapse it before trimming."""
+    if not text:
+        return None
+
+    flat = " ".join(text.split())
+    return flat if len(flat) <= limit else f"{flat[:limit].rstrip()}…"
+
+
 # ---------------------------------------------------------------------------
 # POST /ingest
 # Receives one PDF file, extracts text, chunks, embeds, upserts to Qdrant.
@@ -79,8 +93,8 @@ async def ingest(
 ):
     try:
         file_bytes = await file.read()
-        text = extract_text(file_bytes)
-        chunks = chunk_text(text)
+        pages = extract_pages(file_bytes)
+        chunks = chunk_pages(pages)
 
         # Node sends the id of its Document row so the vectors can be traced
         # back to it later. Fall back to a random id for direct/manual calls.
@@ -169,6 +183,8 @@ async def query(body: QueryRequest):
                     fileName=c["fileName"],
                     documentId=c["documentId"],
                     chunkIndex=c["chunkIndex"],
+                    page=c.get("page"),
+                    excerpt=excerpt_of(c.get("text")),
                     score=c["score"],
                 )
                 for c in best_chunks

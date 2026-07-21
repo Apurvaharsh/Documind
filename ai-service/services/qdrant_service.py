@@ -104,6 +104,8 @@ def search_qdrant(
             "fileName": hit.payload.get("fileName"),
             "documentId": hit.payload.get("documentId"),
             "chunkIndex": hit.payload.get("chunkIndex"),
+            # Absent on anything ingested before page tracking existed.
+            "page": hit.payload.get("page"),
             "text": hit.payload.get("text"),
             "score": hit.score,
         }

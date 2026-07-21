@@ -4,7 +4,8 @@ import { useCollections } from './hooks/useCollections'
 import { useDocuments } from './hooks/useDocuments'
 import AppFooter from './components/AppFooter'
 import AppHeader from './components/AppHeader'
-import AskPanel from './components/AskPanel'
+import ChatView from './components/chat/ChatView'
+import ScopeSelector from './components/chat/ScopeSelector'
 import DocumentsView from './components/DocumentsView'
 import SettingsView from './components/settings/SettingsView'
 import SignedOutHero from './components/SignedOutHero'
@@ -33,6 +34,9 @@ function MissingClerkKey() {
 function Workspace({ getToken, userId }) {
   const [view, setView] = useState('documents')
   const [search, setSearch] = useState('')
+  // "all" | "col:<id>" | "doc:<id>" - lives here so the top bar and the chat
+  // thread stay in agreement about what is being searched.
+  const [scope, setScope] = useState('all')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const fileInputRef = useRef(null)
@@ -54,6 +58,17 @@ function Workspace({ getToken, userId }) {
 
   const { refresh: refreshDocuments, clear: clearDocuments } = docs
   const { refresh: refreshCollections, clear: clearCollections } = cols
+
+  // How many documents the current scope actually covers. Only READY documents
+  // are searchable, so a queued upload should not be counted.
+  const readyDocuments = docs.documents.filter((doc) => doc.status === 'READY')
+  let scopeCount = readyDocuments.length
+  if (scope.startsWith('doc:')) {
+    scopeCount = 1
+  } else if (scope.startsWith('col:')) {
+    const collection = cols.collections.find((entry) => entry.id === scope.slice(4))
+    scopeCount = (collection?.documents || []).filter((doc) => doc.status === 'READY').length
+  }
 
   useEffect(() => {
     if (!userId) {
@@ -78,9 +93,25 @@ function Workspace({ getToken, userId }) {
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar search={search} onSearchChange={setSearch} />
+        <TopBar
+          search={search}
+          onSearchChange={setSearch}
+          leading={
+            view === 'chat' ? (
+              <ScopeSelector
+                scope={scope}
+                onScopeChange={setScope}
+                collections={cols.collections}
+                documents={docs.documents}
+                searchCount={scopeCount}
+              />
+            ) : null
+          }
+        />
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Chat scrolls its own thread and pins a composer, so the outer
+            container must not scroll as well. */}
+        <div className={`min-h-0 flex-1 ${view === 'chat' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {error || status ? (
             <div className="px-8 pt-6">
               <Toast
@@ -104,15 +135,12 @@ function Workspace({ getToken, userId }) {
           ) : null}
 
           {view === 'chat' ? (
-            <div className="mx-auto max-w-3xl px-8 py-7">
-              <h1 className="mb-6 text-[32px] font-bold tracking-tight text-ink">Chat</h1>
-              <AskPanel
-                getToken={getToken}
-                documents={docs.documents}
-                collections={cols.collections}
-                onError={handleError}
-              />
-            </div>
+            <ChatView
+              getToken={getToken}
+              scope={scope}
+              documents={docs.documents}
+              onError={handleError}
+            />
           ) : null}
 
           {view === 'settings' ? (

@@ -138,6 +138,39 @@ export function IconCopy({ className = 'h-4 w-4' }) {
   )
 }
 
+export function IconChevronDown({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  )
+}
+
+export function IconBot({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <rect x="4" y="8" width="16" height="12" rx="2" />
+      <path d="M12 8V4M9 13h.01M15 13h.01M9.5 16.5h5" />
+    </svg>
+  )
+}
+
+export function IconBolt({ className = 'h-3.5 w-3.5' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z" />
+    </svg>
+  )
+}
+
+export function IconSend({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="M4 12 20 4l-8 16-2-6-6-2z" />
+    </svg>
+  )
+}
+
 export function IconTrash({ className = 'h-4 w-4' }) {
   return (
     <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">

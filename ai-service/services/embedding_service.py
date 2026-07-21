@@ -75,7 +75,7 @@ def generate_embeddings(text: str) -> list[float]:
 def create_embeddings(
     qdrant_client,
     document_id: str,
-    chunks: list[str],
+    chunks: list[dict],
     file_name: str,
     user_id: str,
     collection_name: str = COLLECTION_NAME,
@@ -83,13 +83,16 @@ def create_embeddings(
     """
     Embed chunks in batches and upsert to Qdrant.
 
+    chunks are dicts of {"text": ..., "page": ...} from chunk_pages(). The page
+    travels into the payload so an answer can cite where it came from.
+
     user_id is written into every chunk's payload. Search filters on it, so a
     chunk stored without a userId is effectively invisible - and, worse, a chunk
     stored with the wrong userId would leak into someone else's answers.
     """
     for i in range(0, len(chunks), EMBEDDING_BATCH_SIZE):
         batch = chunks[i : i + EMBEDDING_BATCH_SIZE]
-        embeddings = embed_texts(batch, is_query=False)
+        embeddings = embed_texts([chunk["text"] for chunk in batch], is_query=False)
 
         points = [
             PointStruct(
@@ -100,7 +103,8 @@ def create_embeddings(
                     "documentId": document_id,
                     "fileName": file_name,
                     "chunkIndex": i + j,
-                    "text": batch[j],
+                    "page": batch[j]["page"],
+                    "text": batch[j]["text"],
                 },
             )
             for j in range(len(batch))
