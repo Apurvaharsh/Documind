@@ -120,6 +120,24 @@ export function IconQuote({ className = 'h-6 w-6' }) {
   )
 }
 
+export function IconInfo({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
+    </svg>
+  )
+}
+
+export function IconCopy({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </svg>
+  )
+}
+
 export function IconTrash({ className = 'h-4 w-4' }) {
   return (
     <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">

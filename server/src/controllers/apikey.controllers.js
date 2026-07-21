@@ -33,11 +33,15 @@ const createApiKey = async (req, res) => {
             data: {
                 name: name.trim(),
                 hashedKey: hashApiKey(rawKey),
+                // The hash cannot be reversed, so keep the last 4 characters
+                // now - it is the only way to identify a key in the UI later.
+                maskedKey: `cwp_******${rawKey.slice(-4)}`,
                 userId: req.user.id,
             },
             select: {
                 id: true,
                 name: true,
+                maskedKey: true,
                 createdAt: true,
             },
         });
@@ -64,6 +68,7 @@ const listApiKeys = async (req, res) => {
             select: {
                 id: true,
                 name: true,
+                maskedKey: true,
                 createdAt: true,
                 lastUsedAt: true,
             },

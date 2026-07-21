@@ -2,12 +2,11 @@ import { SignedIn, SignedOut, useAuth } from '@clerk/clerk-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCollections } from './hooks/useCollections'
 import { useDocuments } from './hooks/useDocuments'
-import ApiKeysCard from './components/ApiKeysCard'
 import AppFooter from './components/AppFooter'
 import AppHeader from './components/AppHeader'
 import AskPanel from './components/AskPanel'
-import CollectionsCard from './components/CollectionsCard'
 import DocumentsView from './components/DocumentsView'
+import SettingsView from './components/settings/SettingsView'
 import SignedOutHero from './components/SignedOutHero'
 import Sidebar from './components/layout/Sidebar'
 import TopBar from './components/layout/TopBar'
@@ -117,21 +116,16 @@ function Workspace({ getToken, userId }) {
           ) : null}
 
           {view === 'settings' ? (
-            <div className="mx-auto max-w-3xl space-y-5 px-8 py-7">
-              <h1 className="text-[32px] font-bold tracking-tight text-ink">Settings</h1>
-              <CollectionsCard
-                collections={cols.collections}
-                documents={docs.documents}
-                onCreate={cols.create}
-                onAddDocuments={cols.addDocuments}
-              />
-              <ApiKeysCard
-                getToken={getToken}
-                userId={userId}
-                onError={handleError}
-                onStatus={handleStatus}
-              />
-            </div>
+            <SettingsView
+              getToken={getToken}
+              userId={userId}
+              collections={cols.collections}
+              documents={docs.documents}
+              onCreate={cols.create}
+              onAddDocuments={cols.addDocuments}
+              onError={handleError}
+              onStatus={handleStatus}
+            />
           ) : null}
         </div>
       </div>

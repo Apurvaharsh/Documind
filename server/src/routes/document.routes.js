@@ -11,6 +11,7 @@ const {
     deleteDocument,
 } = require('../controllers/document.controllers.js');
 const { askQuestion, listQueries } = require('../controllers/query.controllers.js');
+const { getUsage } = require('../controllers/usage.controllers.js');
 const upload = require('../middlewares/upload.middlewares.js');
 const { authenticate } = require('../middlewares/auth.middlewares.js');
 
@@ -31,5 +32,6 @@ router.delete('/documents/:id', authenticate, deleteDocument);
 // neither      -> search everything the user owns
 router.post('/query', authenticate, askQuestion);
 router.get('/queries', authenticate, listQueries);
+router.get('/usage', authenticate, getUsage);
 
 module.exports = router;

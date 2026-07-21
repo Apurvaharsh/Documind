@@ -105,6 +105,12 @@ model ApiKey {
   id          String    @id @default(cuid())
   name        String
   hashedKey   String    @unique
+
+  // Last 4 characters of the raw key, kept so the UI can show
+  // "cwp_******4f2a". The hash is one-way, so without this there is no way
+  // to display anything identifiable about a key after it is created.
+  maskedKey   String?
+
   createdAt   DateTime  @default(now())
   lastUsedAt  DateTime?
 

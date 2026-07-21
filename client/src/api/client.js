@@ -67,6 +67,10 @@ export async function addDocumentsToCollection(token, collectionId, documentIds)
   })
 }
 
+export async function getUsage(token) {
+  return request('/usage', { headers: authHeaders(token) })
+}
+
 export async function deleteDocument(token, id) {
   return request(`/documents/${id}`, {
     method: 'DELETE',
