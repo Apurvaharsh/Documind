@@ -10,8 +10,27 @@ function hashApiKey(key) {
     return crypto.createHash('sha256').update(key).digest('hex');
 }
 
+// Clerk's API is down / unreachable, as opposed to the token being bad.
+// Worth separating: one is the user's problem, the other is ours.
+function isUpstreamFailure(error) {
+    return (
+        error?.clerkError &&
+        error.errors?.some((entry) => entry.code === 'unexpected_error')
+    );
+}
+
 async function upsertUserFromClerk(payload) {
     const clerkId = payload.sub;
+
+    // Fast path. Once a user exists locally there is nothing left to fetch, so
+    // skip the network entirely. Without this, every authenticated request made
+    // a round trip to Clerk just to read an email we already had - slow, and a
+    // single blip in their API turned into "Unauthorized" for a signed-in user.
+    const existing = await prisma.user.findUnique({ where: { clerkId } });
+    if (existing) {
+        return existing;
+    }
+
     let email = payload.email;
     let name =
         payload.name ||
@@ -102,6 +121,15 @@ const authenticate = async (req, res, next) => {
         });
     } catch (error) {
         console.error('Authentication error:', error);
+
+        // Do not report our own outage as the user's credentials being wrong.
+        if (isUpstreamFailure(error)) {
+            return res.status(503).json({
+                success: false,
+                message: 'Could not reach the authentication service. Try again shortly.',
+            });
+        }
+
         return res.status(401).json({
             success: false,
             message: 'Unauthorized',
@@ -124,6 +152,14 @@ const requireClerkAuth = async (req, res, next) => {
         return next();
     } catch (error) {
         console.error('Clerk authentication error:', error);
+
+        if (isUpstreamFailure(error)) {
+            return res.status(503).json({
+                success: false,
+                message: 'Could not reach the authentication service. Try again shortly.',
+            });
+        }
+
         return res.status(401).json({
             success: false,
             message: 'Unauthorized',
