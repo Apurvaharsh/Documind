@@ -40,12 +40,20 @@ app = FastAPI(lifespan=lifespan)
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
+class Turn(BaseModel):
+    question: str
+    answer: str
+
+
 class QueryRequest(BaseModel):
     question: str
     user_id: str
     # Empty/omitted means "every document this user owns".
     # One id = single document. Several ids = cross-document search.
     document_ids: list[str] | None = None
+    # Earlier turns in the thread, oldest first. Lets "what tech did it use?"
+    # resolve against the subject of the previous question.
+    history: list[Turn] | None = None
 
 
 class SourceChunk(BaseModel):
@@ -137,9 +145,17 @@ async def query(body: QueryRequest):
     try:
         overall_start = time.time()
 
-        # Step 1: Embed the question
+        # Step 1: Embed the question.
+        # A follow-up like "what tech did it use?" has nothing to match on by
+        # itself, so prepend the previous question to give the vector something
+        # concrete to search with. Cheaper than an LLM rewrite, and it only
+        # affects retrieval - the model still sees the real question.
+        search_text = body.question
+        if body.history:
+            search_text = f"{body.history[-1].question} {body.question}"
+
         start = time.time()
-        question_embedding = generate_embeddings(body.question)
+        question_embedding = generate_embeddings(search_text)
         print(f"[Python] Embed question: {(time.time() - start) * 1000:.0f} ms")
 
         # Step 2: Search Qdrant, scoped to this user (and optionally to a
@@ -170,7 +186,8 @@ async def query(body: QueryRequest):
 
         # Step 3: Generate the answer
         start = time.time()
-        answer = generate_response(best_chunks, body.question)
+        history = [(turn.question, turn.answer) for turn in (body.history or [])]
+        answer = generate_response(best_chunks, body.question, history)
         print(f"[Python] LLM response: {(time.time() - start) * 1000:.0f} ms")
         print(f"[Python] Total /query: {(time.time() - overall_start) * 1000:.0f} ms\n")
 

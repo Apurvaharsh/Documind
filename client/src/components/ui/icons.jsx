@@ -187,6 +187,14 @@ export function IconX({ className = 'h-4 w-4' }) {
   )
 }
 
+export function IconPlus({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  )
+}
+
 export function IconTrash({ className = 'h-4 w-4' }) {
   return (
     <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">

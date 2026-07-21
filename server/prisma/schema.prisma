@@ -16,10 +16,36 @@ model User {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  documents   Document[]
-  queries     Query[]
-  apiKeys     ApiKey[]
-  collections Collection[]
+  documents     Document[]
+  queries       Query[]
+  apiKeys       ApiKey[]
+  collections   Collection[]
+  conversations Conversation[]
+}
+
+// A chat thread. Groups Query rows so follow-up questions can be answered with
+// the earlier turns in view, and so a thread survives a page refresh.
+model Conversation {
+  id           String    @id @default(cuid())
+
+  // Taken from the first question asked, trimmed. Cheaper and more predictable
+  // than asking the model to name the thread.
+  title        String
+
+  // The search scope the thread was started with, so reopening it keeps
+  // searching the same documents.
+  documentId   String?
+  collectionId String?
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  queries      Query[]
+
+  @@index([userId, updatedAt])
 }
 
 // A named group of documents, so a question can be asked across all of them
@@ -84,9 +110,16 @@ model Query {
   question    String
   answer      String?   @db.Text
 
+  // Which chunks the answer came from, so reopening a thread still shows the
+  // source cards. Stored as JSON because it is display data, never queried.
+  sources     Json?
+
   responseMs  Int?
 
   createdAt   DateTime  @default(now())
+
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   userId       String
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)

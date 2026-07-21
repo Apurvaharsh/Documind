@@ -39,11 +39,27 @@ export async function createVectorCollection(token) {
 // scope: {}                  -> every ready document you own
 //        { documentId }      -> one document
 //        { collectionId }    -> every ready document in that collection
-export async function askQuestion(token, question, scope = {}) {
+// conversationId continues an existing thread; omit it to start a new one.
+export async function askQuestion(token, question, scope = {}, conversationId) {
   return request('/query', {
     method: 'POST',
     headers: authHeaders(token, true),
-    body: JSON.stringify({ question, ...scope }),
+    body: JSON.stringify({ question, ...scope, conversationId }),
+  })
+}
+
+export async function listConversations(token) {
+  return request('/conversations', { headers: authHeaders(token) })
+}
+
+export async function getConversation(token, id) {
+  return request(`/conversations/${id}`, { headers: authHeaders(token) })
+}
+
+export async function deleteConversation(token, id) {
+  return request(`/conversations/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
   })
 }
 

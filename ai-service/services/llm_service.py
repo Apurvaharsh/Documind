@@ -11,7 +11,16 @@ OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL")
 NOT_FOUND = "Not found in your documents."
 
 
-def build_prompt(best_chunks: list[dict], question: str) -> str:
+# How many earlier turns to include. Enough for "it"/"that one" to resolve,
+# short enough that the context does not crowd out the retrieved chunks.
+MAX_HISTORY_TURNS = 3
+
+
+def build_prompt(
+    best_chunks: list[dict],
+    question: str,
+    history: list[tuple[str, str]] | None = None,
+) -> str:
     """
     Assemble the RAG prompt.
 
@@ -28,9 +37,24 @@ def build_prompt(best_chunks: list[dict], question: str) -> str:
         for i, chunk in enumerate(best_chunks)
     )
 
+    # Earlier turns go between the context and the question, so the question
+    # stays last - that ordering is what stops a small model losing track of
+    # what it was asked.
+    conversation = ""
+    if history:
+        recent = history[-MAX_HISTORY_TURNS:]
+        lines = "\n".join(f"Q: {q}\nA: {a}" for q, a in recent)
+        conversation = (
+            "\nEarlier in this conversation:\n"
+            f"{lines}\n"
+            "\nThe question may refer back to the exchange above - resolve words "
+            'like "it", "that" and "the second one" against it.\n'
+        )
+
     return (
         "Answer the question using only the context below.\n\n"
-        f"Context:\n{context}\n\n"
+        f"Context:\n{context}\n"
+        f"{conversation}\n"
         "Rules:\n"
         "- Use only facts stated in the context above.\n"
         "- Quote names, figures and dates exactly as they are written.\n"
@@ -42,8 +66,12 @@ def build_prompt(best_chunks: list[dict], question: str) -> str:
     )
 
 
-def generate_response(best_chunks: list[dict], question: str) -> str:
-    prompt = build_prompt(best_chunks, question)
+def generate_response(
+    best_chunks: list[dict],
+    question: str,
+    history: list[tuple[str, str]] | None = None,
+) -> str:
+    prompt = build_prompt(best_chunks, question, history)
 
     if PROVIDER == "ollama":
         response = requests.post(

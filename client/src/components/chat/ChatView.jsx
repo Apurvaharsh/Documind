@@ -63,8 +63,17 @@ function AssistantMessage({ message }) {
   )
 }
 
-function ChatView({ getToken, scope, documents, onError }) {
-  const [messages, setMessages] = useState([])
+function ChatView({
+  getToken,
+  scope,
+  documents,
+  onError,
+  messages,
+  setMessages,
+  conversationId,
+  onConversationStarted,
+  isLoadingThread,
+}) {
   const [draft, setDraft] = useState('')
   const [isAsking, setIsAsking] = useState(false)
   const endRef = useRef(null)
@@ -101,7 +110,7 @@ function ChatView({ getToken, scope, documents, onError }) {
         throw new Error('Please sign in first.')
       }
 
-      const data = await askQuestion(token, question, scopeToPayload(scope))
+      const data = await askQuestion(token, question, scopeToPayload(scope), conversationId)
 
       setMessages((current) =>
         current.map((message) =>
@@ -117,6 +126,11 @@ function ChatView({ getToken, scope, documents, onError }) {
             : message
         )
       )
+
+      // The server assigns the id on the first answer of a new thread.
+      if (!conversationId && data.conversationId) {
+        onConversationStarted(data.conversationId)
+      }
     } catch (error) {
       // Drop the placeholder rather than leaving it spinning forever.
       setMessages((current) => current.filter((message) => message.id !== pendingId))
@@ -130,7 +144,13 @@ function ChatView({ getToken, scope, documents, onError }) {
     <div className="relative flex h-full flex-col">
       <div className="flex-grow overflow-y-auto bg-surface px-4 pb-32 pt-8 sm:px-6">
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
-          {messages.length ? (
+          {isLoadingThread ? (
+            <div className="space-y-3 pt-8">
+              <div className="ml-auto h-10 w-2/5 animate-pulse rounded-2xl bg-canvas" />
+              <div className="h-4 w-4/5 animate-pulse rounded bg-canvas" />
+              <div className="h-4 w-3/5 animate-pulse rounded bg-canvas" />
+            </div>
+          ) : messages.length ? (
             messages.map((message) =>
               message.role === 'user' ? (
                 <div key={message.id} className="flex w-full justify-end">

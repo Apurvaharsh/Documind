@@ -1,7 +1,9 @@
 import { SignedIn, SignedOut, useAuth } from '@clerk/clerk-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCollections } from './hooks/useCollections'
+import { useConversations } from './hooks/useConversations'
 import { useDocuments } from './hooks/useDocuments'
+import ConversationList from './components/chat/ConversationList'
 import AppFooter from './components/AppFooter'
 import AppHeader from './components/AppHeader'
 import ChatView from './components/chat/ChatView'
@@ -56,9 +58,11 @@ function Workspace({ getToken, userId }) {
   const callbacks = { onError: handleError, onStatus: handleStatus }
   const docs = useDocuments(getToken, callbacks)
   const cols = useCollections(getToken, callbacks)
+  const chats = useConversations(getToken, callbacks)
 
   const { refresh: refreshDocuments, clear: clearDocuments } = docs
   const { refresh: refreshCollections, clear: clearCollections } = cols
+  const { refresh: refreshConversations, clear: clearConversations } = chats
 
   // How many documents the current scope actually covers. Only READY documents
   // are searchable, so a queued upload should not be counted.
@@ -75,12 +79,22 @@ function Workspace({ getToken, userId }) {
     if (!userId) {
       clearDocuments()
       clearCollections()
+      clearConversations()
       return
     }
 
     refreshDocuments()
     refreshCollections()
-  }, [userId, refreshDocuments, refreshCollections, clearDocuments, clearCollections])
+    refreshConversations()
+  }, [
+    userId,
+    refreshDocuments,
+    refreshCollections,
+    refreshConversations,
+    clearDocuments,
+    clearCollections,
+    clearConversations,
+  ])
 
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
@@ -141,12 +155,36 @@ function Workspace({ getToken, userId }) {
           ) : null}
 
           {view === 'chat' ? (
-            <ChatView
-              getToken={getToken}
-              scope={scope}
-              documents={docs.documents}
-              onError={handleError}
-            />
+            <div className="flex h-full">
+              {/* Thread list is desktop-only: at phone width the chat itself
+                  needs the whole screen. */}
+              <div className="hidden md:flex">
+                <ConversationList
+                  conversations={chats.conversations}
+                  activeId={chats.activeId}
+                  onOpen={chats.open}
+                  onNew={chats.startNew}
+                  onDelete={chats.remove}
+                />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <ChatView
+                  getToken={getToken}
+                  scope={scope}
+                  documents={docs.documents}
+                  onError={handleError}
+                  messages={chats.messages}
+                  setMessages={chats.setMessages}
+                  conversationId={chats.activeId}
+                  isLoadingThread={chats.isLoadingThread}
+                  onConversationStarted={(id) => {
+                    chats.setActiveId(id)
+                    refreshConversations()
+                  }}
+                />
+              </div>
+            </div>
           ) : null}
 
           {view === 'settings' ? (
