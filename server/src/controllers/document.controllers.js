@@ -5,13 +5,18 @@ const prisma = require('../config/prisma.js');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
+// Must match the ai-service values. One collection holds vectors from exactly
+// one embedding model, so dev and production need separate collection names.
+const QDRANT_COLLECTION = process.env.QDRANT_COLLECTION || 'pdf-docs';
+const EMBEDDING_DIM = Number(process.env.EMBEDDING_DIM || 768);
+
 const home = (req, res) => {
     res.send("Welcome to documind");
 };
 
 const createCollection = async (req, res) => {
     try {
-        const exists = await Qdrant.collectionExists("pdf-docs");
+        const exists = await Qdrant.collectionExists(QDRANT_COLLECTION);
         if (exists.exists) {
             return res.status(200).json({
                 success: true,
@@ -19,9 +24,9 @@ const createCollection = async (req, res) => {
             });
         }
 
-        await Qdrant.createCollection("pdf-docs", {
+        await Qdrant.createCollection(QDRANT_COLLECTION, {
             vectors: {
-                size: 768,
+                size: EMBEDDING_DIM,
                 distance: "Cosine"
             }
         });

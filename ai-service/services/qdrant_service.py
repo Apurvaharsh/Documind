@@ -1,3 +1,6 @@
+import os
+
+from dotenv import load_dotenv
 from qdrant_client.models import (
     Filter,
     FieldCondition,
@@ -8,8 +11,18 @@ from qdrant_client.models import (
     PayloadSchemaType,
 )
 
-COLLECTION_NAME = "pdf-docs"
-VECTOR_SIZE = 768
+load_dotenv()
+
+# IMPORTANT: one collection holds vectors from exactly one embedding model.
+#
+# nomic-embed-text (local) and Gemini both produce 768 numbers, so Qdrant will
+# happily accept and compare them - and return confident nonsense, because they
+# are different coordinate systems. Give each environment its own collection
+# (pdf-docs-dev, pdf-docs-prod) and never point two providers at the same one.
+#
+# Changing the embedding model means re-ingesting every document.
+COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "pdf-docs")
+VECTOR_SIZE = int(os.getenv("EMBEDDING_DIM", "768"))
 
 # Payload fields we filter on. Qdrant Cloud runs with strict mode enabled
 # (unindexed_filtering_retrieve = false), which means a filter on a field with

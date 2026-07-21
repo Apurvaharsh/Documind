@@ -7,28 +7,69 @@ from dotenv import load_dotenv
 load_dotenv()
 
 PROVIDER = os.getenv("AI_PROVIDER")
+
 OLLAMA_URL = os.getenv("OLLAMA_URL")
 OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL")
+
+# text-embedding-004 returns 768 numbers natively, which matches nomic-embed-text
+# and therefore the existing collection size. Changing this model means every
+# stored vector has to be regenerated - see the warning in build_filter's module.
+GEMINI_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+
+COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "pdf-docs")
 EMBEDDING_BATCH_SIZE = 10
+
+_gemini_client = None
+
+
+def _get_gemini_client():
+    """Created once, on first use, so Ollama-only setups never need the SDK."""
+    global _gemini_client
+    if _gemini_client is None:
+        from google import genai
+
+        _gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    return _gemini_client
+
+
+def embed_texts(texts: list[str], is_query: bool = False) -> list[list[float]]:
+    """
+    Turn a list of strings into a list of vectors.
+
+    is_query matters for Gemini: it embeds a question differently from a passage,
+    and using the right mode measurably improves retrieval. Ollama has no such
+    distinction, so the flag is ignored there.
+    """
+    if PROVIDER == "ollama":
+        # Ollama embeds one string per call, so a batch is just a loop.
+        vectors = []
+        for text in texts:
+            response = requests.post(
+                f"{OLLAMA_URL}/api/embeddings",
+                json={"model": OLLAMA_EMBEDDING_MODEL, "prompt": text},
+            )
+            response.raise_for_status()
+            vectors.append(response.json()["embedding"])
+        return vectors
+
+    if PROVIDER == "gemini":
+        from google.genai import types
+
+        response = _get_gemini_client().models.embed_content(
+            model=GEMINI_EMBEDDING_MODEL,
+            contents=texts,
+            config=types.EmbedContentConfig(
+                task_type="RETRIEVAL_QUERY" if is_query else "RETRIEVAL_DOCUMENT",
+            ),
+        )
+        return [embedding.values for embedding in response.embeddings]
+
+    raise ValueError(f"Unsupported AI_PROVIDER: '{PROVIDER}'. Use 'ollama' or 'gemini'.")
 
 
 def generate_embeddings(text: str) -> list[float]:
-    """
-    Generate an embedding vector for a single text string.
-    Uses Ollama's /api/embeddings endpoint.
-    """
-    if PROVIDER == "ollama":
-        response = requests.post(
-            f"{OLLAMA_URL}/api/embeddings",
-            json={
-                "model": OLLAMA_EMBEDDING_MODEL,
-                "prompt": text,
-            },
-        )
-        response.raise_for_status()
-        return response.json()["embedding"]
-
-    raise ValueError(f"Unsupported AI_PROVIDER: '{PROVIDER}'. Currently only 'ollama' is supported.")
+    """Embed a single question. Kept for the /query path."""
+    return embed_texts([text], is_query=True)[0]
 
 
 def create_embeddings(
@@ -37,7 +78,7 @@ def create_embeddings(
     chunks: list[str],
     file_name: str,
     user_id: str,
-    collection_name: str = "pdf-docs",
+    collection_name: str = COLLECTION_NAME,
 ) -> None:
     """
     Embed chunks in batches and upsert to Qdrant.
@@ -48,7 +89,7 @@ def create_embeddings(
     """
     for i in range(0, len(chunks), EMBEDDING_BATCH_SIZE):
         batch = chunks[i : i + EMBEDDING_BATCH_SIZE]
-        embeddings = [generate_embeddings(chunk) for chunk in batch]
+        embeddings = embed_texts(batch, is_query=False)
 
         points = [
             PointStruct(
