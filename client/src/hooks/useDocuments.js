@@ -18,10 +18,14 @@ const MAX_POLL_ATTEMPTS = 150 // ~5 minutes before giving up
 export function useDocuments(getToken, { onError, onStatus } = {}) {
   const [documents, setDocuments] = useState([])
   const [isUploading, setIsUploading] = useState(false)
+  // Distinguishes "no documents" from "not fetched yet" - without it the empty
+  // state flashes on every load for people who do have documents.
+  const [isLoading, setIsLoading] = useState(true)
 
   const refresh = useCallback(async () => {
     const token = await getToken()
     if (!token) {
+      setIsLoading(false)
       return
     }
 
@@ -30,6 +34,8 @@ export function useDocuments(getToken, { onError, onStatus } = {}) {
       setDocuments(data.documents || [])
     } catch (error) {
       onError?.(error.message)
+    } finally {
+      setIsLoading(false)
     }
   }, [getToken, onError])
 
@@ -111,5 +117,5 @@ export function useDocuments(getToken, { onError, onStatus } = {}) {
     [getToken, onError, onStatus]
   )
 
-  return { documents, isUploading, refresh, clear, upload, remove }
+  return { documents, isUploading, isLoading, refresh, clear, upload, remove }
 }

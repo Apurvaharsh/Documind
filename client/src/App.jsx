@@ -34,6 +34,7 @@ function MissingClerkKey() {
 function Workspace({ getToken, userId }) {
   const [view, setView] = useState('documents')
   const [search, setSearch] = useState('')
+  const [isSidebarOpen, setSidebarOpen] = useState(false)
   // "all" | "col:<id>" | "doc:<id>" - lives here so the top bar and the chat
   // thread stay in agreement about what is being searched.
   const [scope, setScope] = useState('all')
@@ -83,9 +84,18 @@ function Workspace({ getToken, userId }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
+      {/* Floats above the layout, so a message never shifts the page. */}
+      <Toast
+        message={error || status}
+        tone={error ? 'error' : 'info'}
+        onDismiss={() => (error ? setError('') : setStatus(''))}
+      />
+
       <Sidebar
         activeView={view}
         onNavigate={setView}
+        isOpen={isSidebarOpen}
+        onClose={() => setSidebarOpen(false)}
         onUploadClick={() => {
           setView('documents')
           fileInputRef.current?.click()
@@ -96,6 +106,7 @@ function Workspace({ getToken, userId }) {
         <TopBar
           search={search}
           onSearchChange={setSearch}
+          onMenuClick={() => setSidebarOpen(true)}
           leading={
             view === 'chat' ? (
               <ScopeSelector
@@ -112,24 +123,19 @@ function Workspace({ getToken, userId }) {
         {/* Chat scrolls its own thread and pins a composer, so the outer
             container must not scroll as well. */}
         <div className={`min-h-0 flex-1 ${view === 'chat' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          {error || status ? (
-            <div className="px-8 pt-6">
-              <Toast
-                message={error || status}
-                tone={error ? 'error' : 'info'}
-                onDismiss={() => (error ? setError('') : setStatus(''))}
-              />
-            </div>
-          ) : null}
-
           {view === 'documents' ? (
             <DocumentsView
               documents={docs.documents}
               collections={cols.collections}
               search={search}
               isUploading={docs.isUploading}
+              isLoading={docs.isLoading}
               onUpload={docs.upload}
               onDelete={docs.remove}
+              onAsk={(documentId) => {
+                setScope(`doc:${documentId}`)
+                setView('chat')
+              }}
               fileInputRef={fileInputRef}
             />
           ) : null}

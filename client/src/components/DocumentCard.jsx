@@ -41,7 +41,7 @@ function iconTint(fileName = '') {
     : 'bg-brand-soft text-brand'
 }
 
-function DocumentCard({ document, collectionName, onDelete }) {
+function DocumentCard({ document, collectionName, onDelete, onAsk }) {
   return (
     <article className="group relative flex flex-col rounded-xl border border-line bg-surface p-5 transition-colors hover:border-line-strong">
       <div className="flex items-start justify-between gap-3">
@@ -84,15 +84,26 @@ function DocumentCard({ document, collectionName, onDelete }) {
       ) : null}
 
       {/* Revealed on hover so the resting grid stays calm. Focus-visible keeps
-          it reachable by keyboard, where there is no hover to trigger it. */}
-      <button
-        type="button"
-        onClick={() => onDelete(document.id)}
-        aria-label={`Delete ${document.originalName}`}
-        className="absolute bottom-4 right-4 rounded-lg p-1.5 text-ink-muted opacity-0 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 group-hover:opacity-100"
-      >
-        <IconTrash />
-      </button>
+          them reachable by keyboard, where there is no hover to trigger it. */}
+      <div className="absolute bottom-4 right-4 flex items-center gap-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+        {document.status === 'READY' ? (
+          <button
+            type="button"
+            onClick={() => onAsk(document.id)}
+            className="rounded-lg px-2 py-1 text-xs font-medium text-brand transition-colors hover:bg-brand-soft"
+          >
+            Ask
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => onDelete(document.id)}
+          aria-label={`Delete ${document.originalName}`}
+          className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-rose-50 hover:text-rose-600"
+        >
+          <IconTrash />
+        </button>
+      </div>
     </article>
   )
 }

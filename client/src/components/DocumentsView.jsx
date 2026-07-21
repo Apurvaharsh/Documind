@@ -3,13 +3,25 @@ import DocumentCard from './DocumentCard'
 import Button from './ui/Button'
 import { IconUpload } from './ui/icons'
 
+function SkeletonCard() {
+  return (
+    <div className="rounded-xl border border-line bg-surface p-5">
+      <div className="h-11 w-11 animate-pulse rounded-xl bg-canvas" />
+      <div className="mt-4 h-4 w-3/4 animate-pulse rounded bg-canvas" />
+      <div className="mt-3 h-3 w-1/2 animate-pulse rounded bg-canvas" />
+    </div>
+  )
+}
+
 function DocumentsView({
   documents,
   collections,
   search,
   isUploading,
+  isLoading,
   onUpload,
   onDelete,
+  onAsk,
   fileInputRef,
 }) {
   const localRef = useRef(null)
@@ -59,7 +71,13 @@ function DocumentsView({
         onChange={handleFiles}
       />
 
-      {visible.length ? (
+      {isLoading ? (
+        <div className="mt-7 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      ) : visible.length ? (
         <div className="mt-7 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {visible.map((doc) => (
             <DocumentCard
@@ -67,6 +85,7 @@ function DocumentsView({
               document={doc}
               collectionName={collectionNames[doc.id]}
               onDelete={onDelete}
+              onAsk={onAsk}
             />
           ))}
         </div>

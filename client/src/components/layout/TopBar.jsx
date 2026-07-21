@@ -1,11 +1,20 @@
 import { UserButton } from '@clerk/clerk-react'
-import { IconBell, IconHelp, IconSearch } from '../ui/icons'
+import { IconBell, IconHelp, IconMenu, IconSearch } from '../ui/icons'
 
 // `leading` lets each view own the left side of the bar - search on the
 // documents grid, the scope selector in chat - without duplicating the bar.
-function TopBar({ search, onSearchChange, leading }) {
+function TopBar({ search, onSearchChange, leading, onMenuClick }) {
   return (
-    <header className="flex h-[72px] shrink-0 items-center gap-4 border-b border-line bg-surface px-6">
+    <header className="flex h-[72px] shrink-0 items-center gap-3 border-b border-line bg-surface px-4 sm:px-6">
+      <button
+        type="button"
+        onClick={onMenuClick}
+        aria-label="Open menu"
+        className="-ml-1 rounded-lg p-2 text-ink-soft transition-colors hover:bg-canvas hover:text-ink md:hidden"
+      >
+        <IconMenu />
+      </button>
+
       {leading || (
         <div className="relative w-full max-w-xl">
           <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted">
@@ -23,17 +32,18 @@ function TopBar({ search, onSearchChange, leading }) {
       )}
 
       <div className="ml-auto flex items-center gap-2">
+        {/* Secondary actions give up their space first on narrow screens. */}
         <button
           type="button"
           aria-label="Notifications"
-          className="rounded-lg p-2 text-ink-soft transition-colors hover:bg-canvas hover:text-ink"
+          className="hidden rounded-lg p-2 text-ink-soft transition-colors hover:bg-canvas hover:text-ink sm:block"
         >
           <IconBell />
         </button>
         <button
           type="button"
           aria-label="Help"
-          className="rounded-lg p-2 text-ink-soft transition-colors hover:bg-canvas hover:text-ink"
+          className="hidden rounded-lg p-2 text-ink-soft transition-colors hover:bg-canvas hover:text-ink sm:block"
         >
           <IconHelp />
         </button>
