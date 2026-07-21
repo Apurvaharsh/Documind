@@ -212,6 +212,15 @@ export function IconMoon({ className = 'h-5 w-5' }) {
   )
 }
 
+export function IconHome({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <path d="M9 21v-7h6v7" />
+    </svg>
+  )
+}
+
 export function IconTrash({ className = 'h-4 w-4' }) {
   return (
     <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">

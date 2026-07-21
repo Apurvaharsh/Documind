@@ -61,6 +61,15 @@ function Workspace({ getToken, userId }) {
     setError('')
   }, [])
 
+  // Chat carries its own conversation rail, so leaving the main sidebar open
+  // there would put three columns before the actual thread. It collapses on
+  // the way in and comes back on the way out; the hamburger still overrides.
+  const goToView = useCallback((nextView) => {
+    setView(nextView)
+    const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768
+    setSidebarOpen(nextView !== 'chat' && isDesktop)
+  }, [])
+
   const callbacks = { onError: handleError, onStatus: handleStatus }
   const docs = useDocuments(getToken, callbacks)
   const cols = useCollections(getToken, callbacks)
@@ -113,11 +122,11 @@ function Workspace({ getToken, userId }) {
 
       <Sidebar
         activeView={view}
-        onNavigate={setView}
+        onNavigate={goToView}
         isOpen={isSidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onUploadClick={() => {
-          setView('documents')
+          goToView('documents')
           fileInputRef.current?.click()
         }}
       />
@@ -157,7 +166,7 @@ function Workspace({ getToken, userId }) {
               onDelete={docs.remove}
               onAsk={(documentId) => {
                 setScope(`doc:${documentId}`)
-                setView('chat')
+                goToView('chat')
               }}
               fileInputRef={fileInputRef}
             />
@@ -165,16 +174,17 @@ function Workspace({ getToken, userId }) {
 
           {view === 'chat' ? (
             <div className="flex h-full">
-              {/* Collapses with the sidebar, so one control clears both rails
-                  and gives the thread the whole window. Always hidden on a
-                  phone, where the chat needs the full screen. */}
-              <div className={isSidebarOpen ? 'hidden md:flex' : 'hidden'}>
+              {/* This rail is the chat's own navigation, so it stays put when
+                  the main sidebar collapses. Hidden on a phone, where the
+                  thread needs the whole screen. */}
+              <div className="hidden md:flex">
                 <ConversationList
                   conversations={chats.conversations}
                   activeId={chats.activeId}
                   onOpen={chats.open}
                   onNew={chats.startNew}
                   onDelete={chats.remove}
+                  onHome={() => goToView('documents')}
                 />
               </div>
 

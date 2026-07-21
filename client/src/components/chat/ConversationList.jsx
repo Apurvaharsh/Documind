@@ -1,8 +1,20 @@
-import { IconPlus, IconTrash } from '../ui/icons'
+import { IconHome, IconPlus, IconTrash } from '../ui/icons'
 
-function ConversationList({ conversations, activeId, onOpen, onNew, onDelete }) {
+function ConversationList({ conversations, activeId, onOpen, onNew, onDelete, onHome }) {
   return (
     <div className="flex h-full w-[240px] shrink-0 flex-col border-r border-line bg-canvas">
+      {/* The main sidebar collapses on entering chat, so this is the way back. */}
+      <div className="flex items-center gap-2 border-b border-line p-3">
+        <button
+          type="button"
+          onClick={onHome}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-ink-soft transition-colors hover:bg-surface hover:text-ink"
+        >
+          <IconHome />
+          Home
+        </button>
+      </div>
+
       <div className="p-3">
         <button
           type="button"
