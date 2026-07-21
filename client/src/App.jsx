@@ -1,731 +1,132 @@
-import {
-  SignedIn,
-  SignedOut,
-  SignInButton,
-  SignUpButton,
-  UserButton,
-  useAuth,
-  useUser,
-} from '@clerk/clerk-react'
-import { useEffect, useState } from 'react'
-import {
-  addDocumentsToCollection,
-  askQuestion,
-  createApiKey,
-  createCollection,
-  createVectorCollection,
-  deleteDocument,
-  getDocumentStatus,
-  listApiKeys,
-  listCollections,
-  listDocuments,
-  revokeApiKey,
-  uploadDocuments,
-} from './api/client'
+import { SignedIn, SignedOut, useAuth } from '@clerk/clerk-react'
+import { useCallback, useEffect, useState } from 'react'
+import { useCollections } from './hooks/useCollections'
+import { useDocuments } from './hooks/useDocuments'
+import ApiKeysCard from './components/ApiKeysCard'
+import AppHeader from './components/AppHeader'
+import AskPanel from './components/AskPanel'
+import CollectionsCard from './components/CollectionsCard'
+import DocumentList from './components/DocumentList'
+import SignedOutHero from './components/SignedOutHero'
+import UploadCard from './components/UploadCard'
+import Toast from './components/ui/Toast'
 
-// Badge colours for each value of the DocumentStatus enum in schema.prisma.
-const STATUS_STYLES = {
-  QUEUED: 'bg-slate-500/20 text-slate-300',
-  PROCESSING: 'bg-amber-400/20 text-amber-200',
-  READY: 'bg-emerald-400/20 text-emerald-200',
-  FAILED: 'bg-rose-400/20 text-rose-200',
+function MissingClerkKey() {
+  return (
+    <main className="mx-auto w-full max-w-xl px-4 py-24">
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-6">
+        <h1 className="text-base font-medium text-amber-900">Clerk setup needed</h1>
+        <p className="mt-2 text-sm leading-6 text-amber-800">
+          Create a <code className="rounded bg-white px-1.5 py-0.5">client/.env</code> file
+          containing{' '}
+          <code className="rounded bg-white px-1.5 py-0.5">
+            VITE_CLERK_PUBLISHABLE_KEY=your_key
+          </code>
+          .
+        </p>
+      </div>
+    </main>
+  )
+}
+
+function Workspace({ getToken, userId }) {
+  const [status, setStatus] = useState('')
+  const [error, setError] = useState('')
+
+  // Stable identities so the hooks below do not re-run on every render.
+  const handleError = useCallback((message) => {
+    setError(message)
+    setStatus('')
+  }, [])
+
+  const handleStatus = useCallback((message) => {
+    setStatus(message)
+    setError('')
+  }, [])
+
+  const callbacks = { onError: handleError, onStatus: handleStatus }
+  const docs = useDocuments(getToken, callbacks)
+  const cols = useCollections(getToken, callbacks)
+
+  const { refresh: refreshDocuments, clear: clearDocuments } = docs
+  const { refresh: refreshCollections, clear: clearCollections } = cols
+
+  useEffect(() => {
+    if (!userId) {
+      clearDocuments()
+      clearCollections()
+      return
+    }
+
+    refreshDocuments()
+    refreshCollections()
+  }, [userId, refreshDocuments, refreshCollections, clearDocuments, clearCollections])
+
+  return (
+    <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+      <Toast
+        message={error || status}
+        tone={error ? 'error' : 'info'}
+        onDismiss={() => (error ? setError('') : setStatus(''))}
+      />
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+        {/* Primary column: ask first, because that is why people are here. */}
+        <div className="flex flex-col gap-4">
+          <AskPanel
+            getToken={getToken}
+            documents={docs.documents}
+            collections={cols.collections}
+            onError={handleError}
+          />
+          <DocumentList
+            documents={docs.documents}
+            collections={cols.collections}
+            onDelete={docs.remove}
+          />
+        </div>
+
+        <aside className="flex flex-col gap-4">
+          <UploadCard
+            collections={cols.collections}
+            isUploading={docs.isUploading}
+            onUpload={docs.upload}
+          />
+          <CollectionsCard
+            collections={cols.collections}
+            documents={docs.documents}
+            onCreate={cols.create}
+            onAddDocuments={cols.addDocuments}
+          />
+          <ApiKeysCard
+            getToken={getToken}
+            userId={userId}
+            onError={handleError}
+            onStatus={handleStatus}
+          />
+        </aside>
+      </div>
+    </main>
+  )
 }
 
 function App() {
-  const { getToken, isLoaded, userId } = useAuth()
-  const { user } = useUser()
-  const [files, setFiles] = useState([])
-  const [documents, setDocuments] = useState([])
-  const [collections, setCollections] = useState([])
-  const [question, setQuestion] = useState('')
-  const [answer, setAnswer] = useState(null)
-  const [isAsking, setIsAsking] = useState(false)
-  // "all" | "doc:<id>" | "col:<id>" - encoded in one value so a single
-  // <select> can drive all three search scopes.
-  const [scope, setScope] = useState('all')
-  const [collectionName, setCollectionName] = useState('')
-  const [status, setStatus] = useState('')
-  const [error, setError] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [apiKeys, setApiKeys] = useState([])
-  const [keyName, setKeyName] = useState('')
-  const [latestKey, setLatestKey] = useState('')
-  const [keysLoading, setKeysLoading] = useState(false)
-
-  const handleShowToken = async () => {
-    const token = await getToken()
-    if (!token) {
-      window.alert('No session token is available yet.')
-      return
-    }
-
-    window.alert(token)
-  }
-
-  const loadApiKeys = async () => {
-    const token = await getToken()
-    if (!token) {
-      return
-    }
-
-    setKeysLoading(true)
-    try {
-      const data = await listApiKeys(token)
-      setApiKeys(data.apiKeys || [])
-    } catch (loadError) {
-      setError(loadError.message)
-    } finally {
-      setKeysLoading(false)
-    }
-  }
-
-  const loadDocuments = async () => {
-    const token = await getToken()
-    if (!token) {
-      return
-    }
-
-    try {
-      const data = await listDocuments(token)
-      setDocuments(data.documents || [])
-    } catch (loadError) {
-      setError(loadError.message)
-    }
-  }
-
-  const loadCollections = async () => {
-    const token = await getToken()
-    if (!token) {
-      return
-    }
-
-    try {
-      const data = await listCollections(token)
-      setCollections(data.collections || [])
-    } catch (loadError) {
-      setError(loadError.message)
-    }
-  }
-
-  useEffect(() => {
-    const syncUserData = async () => {
-      if (!userId) {
-        // Signed out - drop anything left over from the previous session.
-        setApiKeys([])
-        setDocuments([])
-        setCollections([])
-        return
-      }
-
-      await loadApiKeys()
-      await loadDocuments()
-      await loadCollections()
-    }
-
-    syncUserData()
-  }, [userId])
-
-  const handleCreateCollection = async () => {
-    setError('')
-    setStatus('Creating vector collection...')
-    try {
-      const token = await getToken()
-      if (!token) {
-        throw new Error('Please sign in first.')
-      }
-
-      const data = await createVectorCollection(token)
-      setStatus(data.message || 'Vector collection is ready.')
-    } catch (collectionError) {
-      setError(collectionError.message)
-      setStatus('')
-    }
-  }
-
-  // Ask the server "is this document done yet?" every couple of seconds.
-  // This is the client half of the async pattern: the upload request already
-  // returned, so the only way to learn about progress is to keep checking.
-  const pollUntilFinished = async (token, documentId) => {
-    const POLL_INTERVAL_MS = 2000
-    const MAX_ATTEMPTS = 150 // roughly 5 minutes before we give up
-
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
-
-      const data = await getDocumentStatus(token, documentId)
-      const updated = data.document
-
-      // Swap just this one document in the list, leave the rest untouched.
-      setDocuments((current) =>
-        current.map((doc) => (doc.id === updated.id ? { ...doc, ...updated } : doc))
-      )
-
-      if (updated.status === 'READY' || updated.status === 'FAILED') {
-        return updated
-      }
-    }
-
-    throw new Error('Timed out waiting for processing to finish.')
-  }
-
-  const handleUpload = async (event) => {
-    event.preventDefault()
-    setError('')
-
-    if (!files.length) {
-      setError('Select at least one PDF file.')
-      return
-    }
-
-    setIsSubmitting(true)
-    setStatus('Uploading...')
-
-    try {
-      const token = await getToken()
-      if (!token) {
-        throw new Error('Please sign in first.')
-      }
-
-      // Step 1 - this comes back almost instantly, even for a 300 page PDF.
-      // The files are only queued at this point, not processed.
-      const data = await uploadDocuments(token, files)
-      const queued = data.documents || []
-      setDocuments((current) => [...queued, ...current])
-      setStatus(`${queued.length} document(s) queued. The worker is processing them...`)
-
-      // Step 2 - watch each one until the background worker finishes it.
-      const results = await Promise.all(
-        queued.map((doc) => pollUntilFinished(token, doc.id))
-      )
-
-      const failedCount = results.filter((doc) => doc.status === 'FAILED').length
-      setStatus(
-        failedCount
-          ? `${failedCount} document(s) failed to process.`
-          : 'All documents processed and ready to query.'
-      )
-    } catch (uploadError) {
-      setError(uploadError.message)
-      setStatus('')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  // Turn the single "all" / "doc:<id>" / "col:<id>" select value into the
-  // shape the API expects.
-  const scopeToPayload = () => {
-    if (scope.startsWith('doc:')) {
-      return { documentId: scope.slice(4) }
-    }
-    if (scope.startsWith('col:')) {
-      return { collectionId: scope.slice(4) }
-    }
-    return {}
-  }
-
-  const handleAsk = async (event) => {
-    event.preventDefault()
-    setError('')
-    setAnswer(null)
-
-    if (!question.trim()) {
-      setError('Enter a question.')
-      return
-    }
-
-    setIsAsking(true)
-    try {
-      const token = await getToken()
-      if (!token) {
-        throw new Error('Please sign in first.')
-      }
-
-      const data = await askQuestion(token, question.trim(), scopeToPayload())
-      setAnswer(data)
-      setStatus(`Searched ${data.documentsSearched ?? 0} document(s) in ${data.responseMs ?? 0}ms.`)
-    } catch (askError) {
-      setError(askError.message)
-    } finally {
-      setIsAsking(false)
-    }
-  }
-
-  const handleCreateCollectionGroup = async (event) => {
-    event.preventDefault()
-    setError('')
-
-    if (!collectionName.trim()) {
-      setError('Enter a collection name.')
-      return
-    }
-
-    try {
-      const token = await getToken()
-      if (!token) {
-        throw new Error('Please sign in first.')
-      }
-
-      await createCollection(token, collectionName.trim())
-      setCollectionName('')
-      await loadCollections()
-      setStatus('Collection created.')
-    } catch (createError) {
-      setError(createError.message)
-    }
-  }
-
-  // Move every ready document that is not already grouped into this collection.
-  const handleFillCollection = async (collectionId) => {
-    setError('')
-    try {
-      const token = await getToken()
-      if (!token) {
-        throw new Error('Please sign in first.')
-      }
-
-      const ids = documents.filter((doc) => doc.status === 'READY').map((doc) => doc.id)
-      if (!ids.length) {
-        setError('No ready documents to add.')
-        return
-      }
-
-      const data = await addDocumentsToCollection(token, collectionId, ids)
-      setStatus(data.message)
-      await loadCollections()
-      await loadDocuments()
-    } catch (addError) {
-      setError(addError.message)
-    }
-  }
-
-  const handleDeleteDocument = async (id) => {
-    setError('')
-    try {
-      const token = await getToken()
-      if (!token) {
-        throw new Error('Please sign in first.')
-      }
-
-      const data = await deleteDocument(token, id)
-      setStatus(data.message)
-      setDocuments((current) => current.filter((doc) => doc.id !== id))
-      await loadCollections()
-    } catch (deleteError) {
-      setError(deleteError.message)
-    }
-  }
-
-  const handleCreateKey = async (event) => {
-    event.preventDefault()
-    setError('')
-    setLatestKey('')
-
-    if (!keyName.trim()) {
-      setError('Enter a name for the API key.')
-      return
-    }
-
-    try {
-      const token = await getToken()
-      if (!token) {
-        throw new Error('Please sign in first.')
-      }
-
-      const data = await createApiKey(token, keyName.trim())
-      setLatestKey(data.key || '')
-      setKeyName('')
-      await loadApiKeys()
-    } catch (keyError) {
-      setError(keyError.message)
-    }
-  }
-
-  const handleRevokeKey = async (id) => {
-    setError('')
-    try {
-      const token = await getToken()
-      if (!token) {
-        throw new Error('Please sign in first.')
-      }
-
-      await revokeApiKey(token, id)
-      await loadApiKeys()
-    } catch (revokeError) {
-      setError(revokeError.message)
-    }
-  }
+  const { getToken, userId } = useAuth()
 
   if (!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-slate-100">
-        <div className="w-full max-w-xl rounded-3xl border border-amber-400/30 bg-slate-900/80 p-8 shadow-2xl shadow-slate-950/40">
-          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.3em] text-amber-300">
-            Clerk setup needed
-          </p>
-          <h1 className="text-3xl font-semibold text-white">
-            Add your publishable key to test authentication
-          </h1>
-          <p className="mt-4 text-sm leading-6 text-slate-300">
-            Create a <code className="rounded bg-slate-800 px-2 py-1 text-slate-100">client/.env</code> file and add{' '}
-            <code className="rounded bg-slate-800 px-2 py-1 text-slate-100">
-              VITE_CLERK_PUBLISHABLE_KEY=your_key
-            </code>
-            .
-          </p>
-        </div>
-      </main>
-    )
+    return <MissingClerkKey />
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_35%),linear-gradient(180deg,_#0f172a_0%,_#020617_100%)] px-4 py-8 text-slate-100">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-        <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-slate-950/30 backdrop-blur sm:p-8">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-            <div className="max-w-2xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-300">
-                DocuMind
-              </p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                Ask better questions across your PDF documents
-              </h1>
-              <p className="mt-4 max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
-                This is a basic frontend for upload, retrieval, and answer generation, with Clerk auth visible while you test the protected routes.
-              </p>
-            </div>
-            <SignedIn>
-              <div className="self-start rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-2">
-                <UserButton />
-              </div>
-            </SignedIn>
-          </div>
-        </section>
-
-        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <section className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/20">
-            <h2 className="text-xl font-semibold text-white">Workspace</h2>
-            <SignedOut>
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                <SignInButton mode="modal">
-                  <button className="inline-flex items-center justify-center rounded-xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">
-                    Sign in
-                  </button>
-                </SignInButton>
-                <SignUpButton mode="modal">
-                  <button className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10">
-                    Create account
-                  </button>
-                </SignUpButton>
-              </div>
-              <p className="mt-4 text-sm text-slate-400">
-                Sign in to create the collection, upload PDFs, generate answers, and manage API keys.
-              </p>
-            </SignedOut>
-
-            <SignedIn>
-              <div className="mt-5 space-y-5">
-                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
-                  <p className="text-sm font-medium text-emerald-200">Signed in successfully</p>
-                  <p className="mt-1 text-sm text-emerald-100/80">
-                    {user?.primaryEmailAddress?.emailAddress || user?.username || 'Authenticated user'}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={handleCreateCollection}
-                    className="inline-flex items-center justify-center rounded-xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-                  >
-                    Create collection
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleShowToken}
-                    className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-                  >
-                    Show Clerk token
-                  </button>
-                </div>
-
-                <form className="space-y-4" onSubmit={handleUpload}>
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-200" htmlFor="pdfs">
-                      Upload PDFs
-                    </label>
-                    <input
-                      id="pdfs"
-                      type="file"
-                      accept="application/pdf"
-                      multiple
-                      onChange={(event) => setFiles(Array.from(event.target.files || []))}
-                      className="block w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-cyan-400 file:px-3 file:py-2 file:font-medium file:text-slate-950"
-                    />
-                    <p className="mt-2 text-xs text-slate-400">
-                      {files.length ? `${files.length} file(s) selected` : 'Choose one or more PDFs to index.'}
-                    </p>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isSubmitting ? 'Processing...' : 'Upload PDFs'}
-                  </button>
-                </form>
-
-                {documents.length ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
-                      Documents
-                    </h3>
-                    <ul className="mt-4 space-y-2">
-                      {documents.map((doc) => (
-                        <li
-                          key={doc.id}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm text-slate-200">{doc.originalName}</p>
-                            {doc.errorMessage ? (
-                              <p className="mt-1 truncate text-xs text-rose-300">{doc.errorMessage}</p>
-                            ) : null}
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <span className={`rounded-lg px-2 py-1 text-xs font-medium ${STATUS_STYLES[doc.status] || STATUS_STYLES.QUEUED}`}>
-                              {doc.status}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteDocument(doc.id)}
-                              className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-400 transition hover:border-rose-400/40 hover:text-rose-300"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {/* Collections - named groups of documents, so one question can
-                    be asked across several PDFs at once. */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
-                    Collections
-                  </h3>
-                  <form className="mt-4 flex gap-2" onSubmit={handleCreateCollectionGroup}>
-                    <input
-                      type="text"
-                      value={collectionName}
-                      onChange={(event) => setCollectionName(event.target.value)}
-                      placeholder="New collection name"
-                      className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-400"
-                    />
-                    <button
-                      type="submit"
-                      className="rounded-xl bg-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-                    >
-                      Create
-                    </button>
-                  </form>
-
-                  {collections.length ? (
-                    <ul className="mt-3 space-y-2">
-                      {collections.map((collection) => (
-                        <li
-                          key={collection.id}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm text-slate-200">{collection.name}</p>
-                            <p className="text-xs text-slate-500">
-                              {collection._count?.documents ?? 0} document(s)
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleFillCollection(collection.id)}
-                            className="shrink-0 rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200"
-                          >
-                            Add ready docs
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-xs text-slate-500">
-                      No collections yet. Create one to search several PDFs together.
-                    </p>
-                  )}
-                </div>
-
-                {/* Ask a question, scoped to everything / one document / one collection. */}
-                <form className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4" onSubmit={handleAsk}>
-                  <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
-                    Ask a question
-                  </h3>
-
-                  <select
-                    value={scope}
-                    onChange={(event) => setScope(event.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
-                  >
-                    <option value="all">All my documents</option>
-                    {collections.map((collection) => (
-                      <option key={collection.id} value={`col:${collection.id}`}>
-                        Collection: {collection.name}
-                      </option>
-                    ))}
-                    {documents
-                      .filter((doc) => doc.status === 'READY')
-                      .map((doc) => (
-                        <option key={doc.id} value={`doc:${doc.id}`}>
-                          Document: {doc.originalName}
-                        </option>
-                      ))}
-                  </select>
-
-                  <textarea
-                    rows="3"
-                    value={question}
-                    onChange={(event) => setQuestion(event.target.value)}
-                    placeholder="What are the key points across these documents?"
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400"
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={isAsking}
-                    className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isAsking ? 'Thinking...' : 'Ask'}
-                  </button>
-
-                  {answer ? (
-                    <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
-                      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">
-                        {answer.text}
-                      </p>
-                      {answer.sources?.length ? (
-                        <div className="mt-3 border-t border-white/10 pt-3">
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Sources</p>
-                          <ul className="mt-2 space-y-1">
-                            {answer.sources.slice(0, 5).map((source, index) => (
-                              <li key={index} className="text-xs text-slate-400">
-                                {source.fileName} · chunk {source.chunkIndex} · score{' '}
-                                {source.score?.toFixed(3)}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </form>
-              </div>
-            </SignedIn>
-          </section>
-
-          <aside className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/20">
-            <h2 className="text-xl font-semibold text-white">Control panel</h2>
-            <dl className="mt-5 space-y-3 text-sm text-slate-300">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <dt className="text-slate-400">Clerk loaded</dt>
-                <dd className="mt-1 font-medium text-white">{isLoaded ? 'Yes' : 'No'}</dd>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <dt className="text-slate-400">User ID</dt>
-                <dd className="mt-1 break-all font-medium text-white">{userId || 'Not signed in'}</dd>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <dt className="text-slate-400">Recommended next check</dt>
-                <dd className="mt-1 text-slate-200">
-                  Use the token button after sign-in, then send that token to your protected backend route.
-                </dd>
-              </div>
-            </dl>
-
-            {(status || error) && (
-              <div className="mt-5 space-y-3">
-                {status ? (
-                  <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4 text-sm text-cyan-100">
-                    {status}
-                  </div>
-                ) : null}
-                {error ? (
-                  <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4 text-sm text-rose-100">
-                    {error}
-                  </div>
-                ) : null}
-              </div>
-            )}
-
-            <SignedIn>
-              <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
-                  API keys
-                </h3>
-                <form className="mt-4 flex flex-col gap-3" onSubmit={handleCreateKey}>
-                  <input
-                    type="text"
-                    value={keyName}
-                    onChange={(event) => setKeyName(event.target.value)}
-                    placeholder="Key name"
-                    className="rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-400"
-                  />
-                  <button
-                    type="submit"
-                    className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-                  >
-                    Create API key
-                  </button>
-                </form>
-
-                {latestKey ? (
-                  <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-amber-200">Copy this key now</p>
-                    <p className="mt-2 break-all font-mono text-sm text-amber-50">{latestKey}</p>
-                  </div>
-                ) : null}
-
-                <div className="mt-4 space-y-3">
-                  {keysLoading ? (
-                    <p className="text-sm text-slate-400">Loading keys...</p>
-                  ) : apiKeys.length ? (
-                    apiKeys.map((apiKey) => (
-                      <div
-                        key={apiKey.id}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-3"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-white">{apiKey.name}</p>
-                          <p className="text-xs text-slate-400">
-                            Created {new Date(apiKey.createdAt).toLocaleString()}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRevokeKey(apiKey.id)}
-                          className="rounded-lg border border-rose-400/20 bg-rose-400/10 px-3 py-2 text-xs font-semibold text-rose-100 transition hover:bg-rose-400/20"
-                        >
-                          Revoke
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-slate-400">No API keys created yet.</p>
-                  )}
-                </div>
-              </div>
-            </SignedIn>
-          </aside>
-        </div>
-      </div>
-    </main>
+    <div className="min-h-screen bg-canvas">
+      <AppHeader />
+      <SignedOut>
+        <SignedOutHero />
+      </SignedOut>
+      <SignedIn>
+        <Workspace getToken={getToken} userId={userId} />
+      </SignedIn>
+    </div>
   )
 }
 

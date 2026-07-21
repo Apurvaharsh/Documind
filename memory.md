@@ -247,6 +247,26 @@ file the first run had already deleted, failed with ENOENT, and **overwrote a go
 READY document with FAILED**. `processDocument()` now checks the current status
 first and skips if it is already READY.
 
+### Frontend rebuild (same day)
+The UI was one 732-line `App.jsx` in dark navy + cyan. Rebuilt as a light,
+professional interface:
+
+- **Palette:** slate neutrals (`#F8FAFC` canvas, `#FFFFFF` surface, `#E2E8F0` lines,
+  `#0F172A` ink) with a single indigo accent (`#4F46E5`). Defined once as Tailwind v4
+  `@theme` tokens in `index.css`, so `bg-canvas` / `text-ink` / `bg-brand` are real
+  utilities.
+- **The one rule:** indigo is used *only* for the primary action. Green/amber/rose are
+  reserved strictly for READY/PROCESSING/FAILED. Colour never decorates.
+- **Structure:**
+  - `components/ui/` — `Button` (3 variants), `Card`, `StatusBadge`, `EmptyState`, `Toast`
+  - `components/` — `AppHeader`, `SignedOutHero`, `UploadCard`, `DocumentList`,
+    `CollectionsCard`, `AskPanel`, `ApiKeysCard`
+  - `hooks/` — `useDocuments` (owns the polling loop), `useCollections`
+  - `App.jsx` is now ~130 lines and only composes.
+
+Light mode was chosen deliberately: this is a reading app, documents are white, and a
+dark demo on a bright office screen reads worse than it looks on a developer monitor.
+
 ### Gotcha: pre-existing vectors
 Chunks ingested before this change have no `userId` in their payload, so they match
 no filter and are invisible. That fails safe, but they are dead weight — delete them

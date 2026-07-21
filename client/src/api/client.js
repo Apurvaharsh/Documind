@@ -76,10 +76,13 @@ export async function deleteDocument(token, id) {
 
 // Returns immediately with { documents: [{ id, status: 'QUEUED', ... }] }.
 // The PDFs are NOT processed yet at this point - poll getDocumentStatus for that.
-export async function uploadDocuments(token, files) {
+export async function uploadDocuments(token, files, collectionId) {
   const formData = new FormData()
   for (const file of files) {
     formData.append('pdfs', file)
+  }
+  if (collectionId) {
+    formData.append('collectionId', collectionId)
   }
 
   return request('/upload', {
