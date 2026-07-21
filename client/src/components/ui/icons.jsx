@@ -101,6 +101,25 @@ export function IconHelp({ className = 'h-5 w-5' }) {
   )
 }
 
+export function IconSpeed({ className = 'h-6 w-6' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="M12 20a8 8 0 1 1 8-8" />
+      <path d="m12 12 4-3" />
+      <path d="M20 12h2M12 4V2M4.9 6.3 3.5 4.9" />
+    </svg>
+  )
+}
+
+export function IconQuote({ className = 'h-6 w-6' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="M9 7H6a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1c0 2-1 3-2 3" />
+      <path d="M19 7h-3a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1c0 2-1 3-2 3" />
+    </svg>
+  )
+}
+
 export function IconTrash({ className = 'h-4 w-4' }) {
   return (
     <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">

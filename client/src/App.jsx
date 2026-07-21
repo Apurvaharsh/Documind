@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCollections } from './hooks/useCollections'
 import { useDocuments } from './hooks/useDocuments'
 import ApiKeysCard from './components/ApiKeysCard'
+import AppFooter from './components/AppFooter'
 import AppHeader from './components/AppHeader'
 import AskPanel from './components/AskPanel'
 import CollectionsCard from './components/CollectionsCard'
@@ -148,9 +149,10 @@ function App() {
   return (
     <>
       <SignedOut>
-        <div className="min-h-screen bg-canvas">
+        <div className="flex min-h-screen flex-col bg-canvas">
           <AppHeader />
           <SignedOutHero />
+          <AppFooter />
         </div>
       </SignedOut>
       <SignedIn>
