@@ -19,6 +19,28 @@ model User {
   documents   Document[]
   queries     Query[]
   apiKeys     ApiKey[]
+  collections Collection[]
+}
+
+// A named group of documents, so a question can be asked across all of them
+// at once ("cross-document search"). A document belongs to at most one
+// collection - keeping it one-to-many makes the queries much easier to follow
+// than a many-to-many join table.
+model Collection {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  documents   Document[]
+
+  // Two collections of the same name per user would be confusing to pick between.
+  @@unique([userId, name])
 }
 
 // Where a document is in the ingestion pipeline.
@@ -48,6 +70,11 @@ model Document {
   userId        String
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Optional - a document can sit on its own, outside any collection.
+  // onDelete: SetNull means deleting a collection keeps the documents.
+  collectionId  String?
+  collection    Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
   queries       Query[]
 }
 
@@ -64,8 +91,14 @@ model Query {
   userId       String
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  documentId   String
-  document     Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  // Both optional, because a question can be asked against:
+  //   one document      -> documentId set
+  //   a whole collection-> collectionId set
+  //   everything owned  -> both null
+  documentId   String?
+  document     Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  collectionId String?
 }
 
 model ApiKey {

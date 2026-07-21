@@ -18,12 +18,59 @@ async function request(path, options = {}) {
   return data
 }
 
-export async function createCollection(token) {
+function authHeaders(token, json = false) {
+  const headers = { Authorization: `Bearer ${token}` }
+  if (json) {
+    headers['Content-Type'] = 'application/json'
+  }
+  return headers
+}
+
+// Creates the Qdrant vector collection. Unrelated to user "collections" below -
+// this one is the single shared vector store the whole app writes into.
+export async function createVectorCollection(token) {
   return request('/create-collection', {
     method: 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers: authHeaders(token),
+  })
+}
+
+// Ask a question.
+// scope: {}                  -> every ready document you own
+//        { documentId }      -> one document
+//        { collectionId }    -> every ready document in that collection
+export async function askQuestion(token, question, scope = {}) {
+  return request('/query', {
+    method: 'POST',
+    headers: authHeaders(token, true),
+    body: JSON.stringify({ question, ...scope }),
+  })
+}
+
+export async function listCollections(token) {
+  return request('/collections', { headers: authHeaders(token) })
+}
+
+export async function createCollection(token, name, description) {
+  return request('/collections', {
+    method: 'POST',
+    headers: authHeaders(token, true),
+    body: JSON.stringify({ name, description }),
+  })
+}
+
+export async function addDocumentsToCollection(token, collectionId, documentIds) {
+  return request(`/collections/${collectionId}/documents`, {
+    method: 'PATCH',
+    headers: authHeaders(token, true),
+    body: JSON.stringify({ documentIds }),
+  })
+}
+
+export async function deleteDocument(token, id) {
+  return request(`/documents/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
   })
 }
 

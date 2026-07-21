@@ -36,11 +36,15 @@ def create_embeddings(
     document_id: str,
     chunks: list[str],
     file_name: str,
+    user_id: str,
     collection_name: str = "pdf-docs",
 ) -> None:
     """
     Embed chunks in batches and upsert to Qdrant.
-    Mirrors createEmbeddings() in embedding.services.js — same batch size, same payload shape.
+
+    user_id is written into every chunk's payload. Search filters on it, so a
+    chunk stored without a userId is effectively invisible - and, worse, a chunk
+    stored with the wrong userId would leak into someone else's answers.
     """
     for i in range(0, len(chunks), EMBEDDING_BATCH_SIZE):
         batch = chunks[i : i + EMBEDDING_BATCH_SIZE]
@@ -51,6 +55,7 @@ def create_embeddings(
                 id=str(uuid.uuid4()),
                 vector=embeddings[j],
                 payload={
+                    "userId": user_id,
                     "documentId": document_id,
                     "fileName": file_name,
                     "chunkIndex": i + j,

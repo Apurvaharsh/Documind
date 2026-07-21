@@ -3,6 +3,8 @@ const Qdrant = require('../config/qdrant.js');
 const documentQueue = require('../queues/document.queue.js');
 const prisma = require('../config/prisma.js');
 
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
 const home = (req, res) => {
     res.send("Welcome to documind");
 };
@@ -45,6 +47,22 @@ const uploadDocument = async (req, res) => {
             });
         }
 
+        // Optional - upload straight into a collection.
+        // Checked against userId so nobody can drop files into someone else's collection.
+        const { collectionId } = req.body;
+        if (collectionId) {
+            const collection = await prisma.collection.findFirst({
+                where: { id: collectionId, userId: req.user.id },
+            });
+
+            if (!collection) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Collection not found',
+                });
+            }
+        }
+
         const queuedDocuments = [];
 
         for (const file of req.files) {
@@ -56,6 +74,7 @@ const uploadDocument = async (req, res) => {
                     mimeType: file.mimetype,
                     qdrantDocId: crypto.randomUUID(),
                     userId: req.user.id,
+                    collectionId: collectionId || null,
                 },
             });
 
@@ -64,6 +83,7 @@ const uploadDocument = async (req, res) => {
                 qdrantDocId: document.qdrantDocId,
                 filePath: file.path,
                 fileName: file.originalname,
+                userId: req.user.id,
             });
 
             queuedDocuments.push({
@@ -155,10 +175,55 @@ const listDocuments = async (req, res) => {
     }
 };
 
+// DELETE /documents/:id
+// Removes one document: its vectors in Qdrant first, then the database row.
+// This replaces the old "wipe the whole collection" approach, which destroyed
+// every user's data at once.
+const deleteDocument = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const document = await prisma.document.findFirst({
+            where: { id, userId: req.user.id },
+        });
+
+        if (!document) {
+            return res.status(404).json({
+                success: false,
+                message: 'Document not found',
+            });
+        }
+
+        // Vectors first. If this fails we stop and keep the row, so the document
+        // is not left as an untracked pile of chunks in Qdrant.
+        const url = `${AI_SERVICE_URL}/documents/${document.qdrantDocId}?user_id=${encodeURIComponent(req.user.id)}`;
+        const aiResponse = await fetch(url, { method: 'DELETE' });
+
+        if (!aiResponse.ok) {
+            const detail = await aiResponse.text();
+            throw new Error(`AI service returned ${aiResponse.status}: ${detail}`);
+        }
+
+        await prisma.document.delete({ where: { id } });
+
+        res.status(200).json({
+            success: true,
+            message: `Deleted '${document.originalName}'`,
+        });
+    } catch (error) {
+        console.error('Error deleting document:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete document',
+        });
+    }
+};
+
 module.exports = {
     createCollection,
     uploadDocument,
     getDocumentStatus,
     listDocuments,
+    deleteDocument,
     home
 };

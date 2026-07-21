@@ -14,13 +14,16 @@ const CONCURRENCY = 1;
  * Send one PDF to the Python AI service, which does the slow work:
  * extract text -> chunk -> embed -> store in Qdrant.
  */
-async function sendToAiService(filePath, fileName, qdrantDocId) {
+async function sendToAiService(filePath, fileName, qdrantDocId, userId) {
     const fileBuffer = await fs.readFile(filePath);
 
     // Node 18+ has FormData/Blob built in, so no extra library needed here.
     const formData = new FormData();
     formData.append('file', new Blob([fileBuffer]), fileName);
     formData.append('document_id', qdrantDocId);
+    // Stamped onto every chunk in Qdrant - this is what search filters on,
+    // so getting it wrong would expose one user's document to another.
+    formData.append('user_id', userId);
 
     const response = await fetch(`${AI_SERVICE_URL}/ingest`, {
         method: 'POST',
@@ -41,9 +44,29 @@ async function sendToAiService(filePath, fileName, qdrantDocId) {
  * Everything in here used to run inside the upload HTTP request.
  */
 async function processDocument(job) {
-    const { documentId, qdrantDocId, filePath, fileName } = job.data;
+    const { documentId, qdrantDocId, filePath, fileName, userId } = job.data;
 
     console.log(`[worker] started "${fileName}" (document ${documentId})`);
+
+    // 0. The same job can be delivered twice. If the worker is killed after
+    //    finishing but before BullMQ records the completion, the job counts as
+    //    "stalled" and gets retried. Re-running it would hit the temp file we
+    //    already deleted, and mark a perfectly good document as FAILED.
+    //    So check the current state before doing anything destructive.
+    const existing = await prisma.document.findUnique({
+        where: { id: documentId },
+        select: { status: true },
+    });
+
+    if (!existing) {
+        console.log(`[worker] document ${documentId} no longer exists, skipping`);
+        return;
+    }
+
+    if (existing.status === 'READY') {
+        console.log(`[worker] "${fileName}" is already READY, skipping duplicate job`);
+        return;
+    }
 
     // 1. Mark PROCESSING so a polling client can see it moved off the queue.
     await prisma.document.update({
@@ -52,7 +75,7 @@ async function processDocument(job) {
     });
 
     // 2. The slow part. Takes seconds to minutes for a large PDF.
-    await sendToAiService(filePath, fileName, qdrantDocId);
+    await sendToAiService(filePath, fileName, qdrantDocId, userId);
 
     // 3. Mark READY - the document can now be queried.
     await prisma.document.update({

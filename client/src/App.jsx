@@ -9,10 +9,15 @@ import {
 } from '@clerk/clerk-react'
 import { useEffect, useState } from 'react'
 import {
+  addDocumentsToCollection,
+  askQuestion,
   createApiKey,
   createCollection,
+  createVectorCollection,
+  deleteDocument,
   getDocumentStatus,
   listApiKeys,
+  listCollections,
   listDocuments,
   revokeApiKey,
   uploadDocuments,
@@ -31,6 +36,14 @@ function App() {
   const { user } = useUser()
   const [files, setFiles] = useState([])
   const [documents, setDocuments] = useState([])
+  const [collections, setCollections] = useState([])
+  const [question, setQuestion] = useState('')
+  const [answer, setAnswer] = useState(null)
+  const [isAsking, setIsAsking] = useState(false)
+  // "all" | "doc:<id>" | "col:<id>" - encoded in one value so a single
+  // <select> can drive all three search scopes.
+  const [scope, setScope] = useState('all')
+  const [collectionName, setCollectionName] = useState('')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -80,17 +93,33 @@ function App() {
     }
   }
 
+  const loadCollections = async () => {
+    const token = await getToken()
+    if (!token) {
+      return
+    }
+
+    try {
+      const data = await listCollections(token)
+      setCollections(data.collections || [])
+    } catch (loadError) {
+      setError(loadError.message)
+    }
+  }
+
   useEffect(() => {
     const syncUserData = async () => {
       if (!userId) {
         // Signed out - drop anything left over from the previous session.
         setApiKeys([])
         setDocuments([])
+        setCollections([])
         return
       }
 
       await loadApiKeys()
       await loadDocuments()
+      await loadCollections()
     }
 
     syncUserData()
@@ -105,8 +134,8 @@ function App() {
         throw new Error('Please sign in first.')
       }
 
-      const data = await createCollection(token)
-      setStatus(data.message || 'Collection is ready.')
+      const data = await createVectorCollection(token)
+      setStatus(data.message || 'Vector collection is ready.')
     } catch (collectionError) {
       setError(collectionError.message)
       setStatus('')
@@ -180,6 +209,110 @@ function App() {
       setStatus('')
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  // Turn the single "all" / "doc:<id>" / "col:<id>" select value into the
+  // shape the API expects.
+  const scopeToPayload = () => {
+    if (scope.startsWith('doc:')) {
+      return { documentId: scope.slice(4) }
+    }
+    if (scope.startsWith('col:')) {
+      return { collectionId: scope.slice(4) }
+    }
+    return {}
+  }
+
+  const handleAsk = async (event) => {
+    event.preventDefault()
+    setError('')
+    setAnswer(null)
+
+    if (!question.trim()) {
+      setError('Enter a question.')
+      return
+    }
+
+    setIsAsking(true)
+    try {
+      const token = await getToken()
+      if (!token) {
+        throw new Error('Please sign in first.')
+      }
+
+      const data = await askQuestion(token, question.trim(), scopeToPayload())
+      setAnswer(data)
+      setStatus(`Searched ${data.documentsSearched ?? 0} document(s) in ${data.responseMs ?? 0}ms.`)
+    } catch (askError) {
+      setError(askError.message)
+    } finally {
+      setIsAsking(false)
+    }
+  }
+
+  const handleCreateCollectionGroup = async (event) => {
+    event.preventDefault()
+    setError('')
+
+    if (!collectionName.trim()) {
+      setError('Enter a collection name.')
+      return
+    }
+
+    try {
+      const token = await getToken()
+      if (!token) {
+        throw new Error('Please sign in first.')
+      }
+
+      await createCollection(token, collectionName.trim())
+      setCollectionName('')
+      await loadCollections()
+      setStatus('Collection created.')
+    } catch (createError) {
+      setError(createError.message)
+    }
+  }
+
+  // Move every ready document that is not already grouped into this collection.
+  const handleFillCollection = async (collectionId) => {
+    setError('')
+    try {
+      const token = await getToken()
+      if (!token) {
+        throw new Error('Please sign in first.')
+      }
+
+      const ids = documents.filter((doc) => doc.status === 'READY').map((doc) => doc.id)
+      if (!ids.length) {
+        setError('No ready documents to add.')
+        return
+      }
+
+      const data = await addDocumentsToCollection(token, collectionId, ids)
+      setStatus(data.message)
+      await loadCollections()
+      await loadDocuments()
+    } catch (addError) {
+      setError(addError.message)
+    }
+  }
+
+  const handleDeleteDocument = async (id) => {
+    setError('')
+    try {
+      const token = await getToken()
+      if (!token) {
+        throw new Error('Please sign in first.')
+      }
+
+      const data = await deleteDocument(token, id)
+      setStatus(data.message)
+      setDocuments((current) => current.filter((doc) => doc.id !== id))
+      await loadCollections()
+    } catch (deleteError) {
+      setError(deleteError.message)
     }
   }
 
@@ -360,14 +493,139 @@ function App() {
                               <p className="mt-1 truncate text-xs text-rose-300">{doc.errorMessage}</p>
                             ) : null}
                           </div>
-                          <span className={`shrink-0 rounded-lg px-2 py-1 text-xs font-medium ${STATUS_STYLES[doc.status] || STATUS_STYLES.QUEUED}`}>
-                            {doc.status}
-                          </span>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className={`rounded-lg px-2 py-1 text-xs font-medium ${STATUS_STYLES[doc.status] || STATUS_STYLES.QUEUED}`}>
+                              {doc.status}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDocument(doc.id)}
+                              className="rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-400 transition hover:border-rose-400/40 hover:text-rose-300"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </li>
                       ))}
                     </ul>
                   </div>
                 ) : null}
+
+                {/* Collections - named groups of documents, so one question can
+                    be asked across several PDFs at once. */}
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
+                    Collections
+                  </h3>
+                  <form className="mt-4 flex gap-2" onSubmit={handleCreateCollectionGroup}>
+                    <input
+                      type="text"
+                      value={collectionName}
+                      onChange={(event) => setCollectionName(event.target.value)}
+                      placeholder="New collection name"
+                      className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-400"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-xl bg-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+                    >
+                      Create
+                    </button>
+                  </form>
+
+                  {collections.length ? (
+                    <ul className="mt-3 space-y-2">
+                      {collections.map((collection) => (
+                        <li
+                          key={collection.id}
+                          className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm text-slate-200">{collection.name}</p>
+                            <p className="text-xs text-slate-500">
+                              {collection._count?.documents ?? 0} document(s)
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleFillCollection(collection.id)}
+                            className="shrink-0 rounded-lg border border-white/10 px-2 py-1 text-xs text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-200"
+                          >
+                            Add ready docs
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-xs text-slate-500">
+                      No collections yet. Create one to search several PDFs together.
+                    </p>
+                  )}
+                </div>
+
+                {/* Ask a question, scoped to everything / one document / one collection. */}
+                <form className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4" onSubmit={handleAsk}>
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-300">
+                    Ask a question
+                  </h3>
+
+                  <select
+                    value={scope}
+                    onChange={(event) => setScope(event.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400"
+                  >
+                    <option value="all">All my documents</option>
+                    {collections.map((collection) => (
+                      <option key={collection.id} value={`col:${collection.id}`}>
+                        Collection: {collection.name}
+                      </option>
+                    ))}
+                    {documents
+                      .filter((doc) => doc.status === 'READY')
+                      .map((doc) => (
+                        <option key={doc.id} value={`doc:${doc.id}`}>
+                          Document: {doc.originalName}
+                        </option>
+                      ))}
+                  </select>
+
+                  <textarea
+                    rows="3"
+                    value={question}
+                    onChange={(event) => setQuestion(event.target.value)}
+                    placeholder="What are the key points across these documents?"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={isAsking}
+                    className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isAsking ? 'Thinking...' : 'Ask'}
+                  </button>
+
+                  {answer ? (
+                    <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
+                      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">
+                        {answer.text}
+                      </p>
+                      {answer.sources?.length ? (
+                        <div className="mt-3 border-t border-white/10 pt-3">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Sources</p>
+                          <ul className="mt-2 space-y-1">
+                            {answer.sources.slice(0, 5).map((source, index) => (
+                              <li key={index} className="text-xs text-slate-400">
+                                {source.fileName} · chunk {source.chunkIndex} · score{' '}
+                                {source.score?.toFixed(3)}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </form>
               </div>
             </SignedIn>
           </section>

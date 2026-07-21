@@ -187,3 +187,67 @@ Client polls GET /documents/:id every 2s ─────────────
 - No `/query` route on Node — asking questions is not wired up end to end yet.
 - Qdrant search has **no per-user filter**, so retrieval can return another user's chunks.
 - The `Query` model in `schema.prisma` is still unused.
+
+*(All three were fixed in Change 4 below.)*
+
+---
+
+## Change 4 — Document isolation, collections, cross-document RAG (2026-07-21)
+
+### Why
+Every chunk lived in one shared `pdf-docs` collection and `search_qdrant()` had no
+filter at all, so **any user's question could retrieve any other user's PDF text**.
+`DELETE /clear` made it worse by dropping the whole collection — one user wiping
+everybody's data. This change makes each document its own searchable unit, then
+groups documents so several can be searched together.
+
+### The Qdrant detail that shapes everything
+Qdrant Cloud runs with **strict mode enabled** (`unindexed_filtering_retrieve: false`).
+Filtering on a field with no payload index is rejected outright:
+
+```
+Bad request: Index required but not found for "userId" of one of the following types: [keyword]
+```
+
+So `ensure_collection()` (called on FastAPI startup) creates keyword indexes on
+`userId` and `documentId`. Without those indexes, **filtering does not work at all** —
+they are not a performance tweak.
+
+### What changed
+
+| File | Change |
+|------|--------|
+| `ai-service/services/qdrant_service.py` | Rewritten. `ensure_collection()`, `build_filter()`, filtered `search_qdrant()`, `delete_document()`. |
+| `ai-service/services/embedding_service.py` | Writes `userId` into every chunk's payload. |
+| `ai-service/main.py` | `/ingest` takes `user_id`; `/query` takes `user_id` + optional `document_ids` and returns `sources`; `/clear` replaced by `DELETE /documents/{id}`. |
+| `server/prisma/schema.prisma` | New `Collection` model; `Document.collectionId`; `Query.documentId` made optional + `collectionId` added. |
+| `server/src/controllers/query.controllers.js` | **New.** `resolveScope()` + `askQuestion()` + `listQueries()`. |
+| `server/src/controllers/collection.controllers.js` | **New.** Collection CRUD. |
+| `server/src/controllers/document.controllers.js` | Upload accepts `collectionId`; new scoped `deleteDocument`. |
+| `server/src/workers/document.worker.js` | Sends `user_id`; **skips jobs whose document is already READY** (see below). |
+| `client/` | Ask box with a scope selector (all / one document / one collection), sources list, collections panel. |
+
+### The three search scopes
+`POST /query` body decides what gets searched:
+
+| Body | Searches |
+|------|----------|
+| `{ question }` | every READY document you own |
+| `{ question, documentId }` | that one document |
+| `{ question, collectionId }` | every READY document in that collection (cross-document) |
+
+Node resolves the scope to a list of `qdrantDocId` values and sends them to Python.
+Python **always** filters on `user_id` as well, so a bug in Node's id list still cannot
+return another user's chunks.
+
+### Worker idempotency bug found while testing
+If the worker is killed after finishing a job but before BullMQ records the
+completion, BullMQ re-delivers the job as *stalled*. The retry then hit the temp
+file the first run had already deleted, failed with ENOENT, and **overwrote a good
+READY document with FAILED**. `processDocument()` now checks the current status
+first and skips if it is already READY.
+
+### Gotcha: pre-existing vectors
+Chunks ingested before this change have no `userId` in their payload, so they match
+no filter and are invisible. That fails safe, but they are dead weight — delete them
+or re-ingest those documents.
