@@ -24,6 +24,19 @@ load_dotenv()
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "pdf-docs")
 VECTOR_SIZE = int(os.getenv("EMBEDDING_DIM", "768"))
 
+# How many chunks to feed the model.
+#
+# This is the main latency dial. Almost all of the wait is the model READING
+# the prompt, not writing the answer - measured on CPU with gemma3:1b:
+#
+#   top_k=10 -> 3680 tokens -> 70.2s reading, 0.3s writing
+#   top_k=5  -> 2356 tokens -> 44.2s reading, 0.6s writing
+#   top_k=3  -> 1389 tokens -> 25.5s reading, 0.2s writing
+#
+# Hosted models prefill far faster, so this can be raised when AI_PROVIDER
+# is gemini.
+RETRIEVAL_LIMIT = int(os.getenv("RETRIEVAL_LIMIT", "5"))
+
 # Payload fields we filter on. Qdrant Cloud runs with strict mode enabled
 # (unindexed_filtering_retrieve = false), which means a filter on a field with
 # no index is rejected with "Bad request: Index required but not found".
@@ -85,7 +98,7 @@ def search_qdrant(
     user_id: str,
     document_ids: list[str] | None = None,
     collection_name: str = COLLECTION_NAME,
-    limit: int = 10,
+    limit: int = RETRIEVAL_LIMIT,
 ) -> list[dict]:
     """
     Search for the chunks closest to the question embedding, restricted to

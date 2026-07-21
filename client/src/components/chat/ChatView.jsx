@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { askQuestion } from '../../api/client'
+import { askQuestionStream } from '../../api/client'
 import { IconBolt, IconBot, IconSend } from '../ui/icons'
 import SourceCard from './SourceCard'
 
@@ -54,8 +54,12 @@ function AssistantMessage({ message }) {
           <p className="mt-3 flex items-center gap-1 text-xs text-ink-soft">
             <IconBolt />
             Searched {message.documentsSearched ?? 0} document
-            {message.documentsSearched === 1 ? '' : 's'} in{' '}
-            {((message.responseMs ?? 0) / 1000).toFixed(1)}s
+            {message.documentsSearched === 1 ? '' : 's'}
+            {/* Timing only once the stream has finished - mid-stream it would
+                read "0.0s", which is worse than saying nothing. */}
+            {message.responseMs != null
+              ? ` in ${(message.responseMs / 1000).toFixed(1)}s`
+              : '…'}
           </p>
         </div>
       ) : null}
@@ -110,26 +114,48 @@ function ChatView({
         throw new Error('Please sign in first.')
       }
 
-      const data = await askQuestion(token, question, scopeToPayload(scope), conversationId)
-
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === pendingId
-            ? {
-                ...message,
-                pending: false,
-                text: data.text,
-                sources: data.sources,
-                documentsSearched: data.documentsSearched,
-                responseMs: data.responseMs,
-              }
-            : message
+      // Patch just the placeholder message as each event lands.
+      const update = (patch) =>
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === pendingId ? { ...message, ...patch } : message
+          )
         )
+
+      let streamError = null
+      let answer = ''
+
+      await askQuestionStream(
+        token,
+        question,
+        scopeToPayload(scope),
+        conversationId,
+        (name, payload) => {
+          if (name === 'meta') {
+            // The server assigns the id on the first answer of a new thread.
+            if (!conversationId && payload.conversationId) {
+              onConversationStarted(payload.conversationId)
+            }
+          } else if (name === 'sources') {
+            // Retrieval finishes long before generation, so citations show
+            // while the answer is still being written.
+            update({
+              sources: payload.sources,
+              documentsSearched: payload.documentsSearched,
+            })
+          } else if (name === 'delta') {
+            answer += payload.text || ''
+            update({ pending: false, text: answer })
+          } else if (name === 'done') {
+            update({ pending: false, responseMs: payload.responseMs })
+          } else if (name === 'error') {
+            streamError = payload.message
+          }
+        }
       )
 
-      // The server assigns the id on the first answer of a new thread.
-      if (!conversationId && data.conversationId) {
-        onConversationStarted(data.conversationId)
+      if (streamError) {
+        throw new Error(streamError)
       }
     } catch (error) {
       // Drop the placeholder rather than leaving it spinning forever.

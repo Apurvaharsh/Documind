@@ -1,3 +1,4 @@
+import json
 import os
 import requests
 from dotenv import load_dotenv
@@ -64,6 +65,63 @@ def build_prompt(
         f"Question: {question}\n\n"
         "Answer:"
     )
+
+
+def generate_response_stream(
+    best_chunks: list[dict],
+    question: str,
+    history: list[tuple[str, str]] | None = None,
+):
+    """
+    Yield the answer in pieces as the model produces it.
+
+    Same prompt and same total time as generate_response - the difference is
+    that the first words arrive in a second or two instead of after the whole
+    answer is finished.
+    """
+    prompt = build_prompt(best_chunks, question, history)
+
+    if PROVIDER == "ollama":
+        with requests.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={
+                "model": OLLAMA_LLM_MODEL,
+                "prompt": prompt,
+                "stream": True,
+                "think": False,
+                "options": {"temperature": 0.1},
+            },
+            stream=True,
+            timeout=900,
+        ) as response:
+            response.raise_for_status()
+            # Ollama emits one JSON object per line, each with a fragment.
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                chunk = json.loads(line)
+                piece = chunk.get("response", "")
+                if piece:
+                    yield piece
+                if chunk.get("done"):
+                    break
+
+    elif PROVIDER == "gemini":
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        stream = client.models.generate_content_stream(
+            model=os.getenv("GEMINI_LLM_MODEL", "gemini-2.0-flash-lite"),
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.1),
+        )
+        for chunk in stream:
+            if chunk.text:
+                yield chunk.text
+
+    else:
+        raise ValueError(f"Unsupported AI_PROVIDER: '{PROVIDER}'")
 
 
 def generate_response(

@@ -4,14 +4,17 @@ import uuid
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
+import json
+
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
 from services.pdf_service import extract_pages, chunk_pages
 from services.embedding_service import generate_embeddings, create_embeddings
 from services.qdrant_service import search_qdrant, ensure_collection, delete_document
-from services.llm_service import generate_response
+from services.llm_service import generate_response, generate_response_stream
 
 load_dotenv()
 
@@ -140,6 +143,83 @@ async def delete_document_vectors(document_id: str, user_id: str):
 # Embeds the question, retrieves the top chunks the user is allowed to see,
 # and generates an answer from them.
 # ---------------------------------------------------------------------------
+def sse(event: str, payload: dict) -> str:
+    """Format one Server-Sent Event. The blank line terminates the frame."""
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+def retrieve(body: QueryRequest):
+    """Shared retrieval for both the buffered and streaming endpoints."""
+    # A follow-up like "what tech did it use?" has nothing to match on by
+    # itself, so prepend the previous question for the search only.
+    search_text = body.question
+    if body.history:
+        search_text = f"{body.history[-1].question} {body.question}"
+
+    embedding = generate_embeddings(search_text)
+    return search_qdrant(
+        qdrant,
+        embedding,
+        user_id=body.user_id,
+        document_ids=body.document_ids,
+    )
+
+
+def source_payload(chunks: list[dict]) -> list[dict]:
+    return [
+        {
+            "fileName": c["fileName"],
+            "documentId": c["documentId"],
+            "chunkIndex": c["chunkIndex"],
+            "page": c.get("page"),
+            "excerpt": excerpt_of(c.get("text")),
+            "score": c["score"],
+        }
+        for c in chunks
+    ]
+
+
+# ---------------------------------------------------------------------------
+# POST /query/stream
+# Same work as /query, delivered as it happens. Retrieval finishes in a couple
+# of hundred milliseconds, so the sources go out first and the citations are
+# on screen before the model has written a word.
+# ---------------------------------------------------------------------------
+@app.post("/query/stream")
+async def query_stream(body: QueryRequest):
+    def events():
+        started = time.time()
+        try:
+            best_chunks = retrieve(body)
+
+            if not best_chunks:
+                yield sse("sources", {"sources": [], "documentsSearched": 0})
+                yield sse("delta", {"text": "I could not find anything relevant in your documents."})
+                yield sse("done", {"responseMs": int((time.time() - started) * 1000)})
+                return
+
+            yield sse("sources", {
+                "sources": source_payload(best_chunks),
+                "documentsSearched": len(set(c["documentId"] for c in best_chunks)),
+            })
+
+            history = [(t.question, t.answer) for t in (body.history or [])]
+            for piece in generate_response_stream(best_chunks, body.question, history):
+                yield sse("delta", {"text": piece})
+
+            yield sse("done", {"responseMs": int((time.time() - started) * 1000)})
+        except Exception as e:
+            # The response has already started, so a status code cannot be set.
+            # The client watches for this event instead.
+            yield sse("error", {"message": str(e)})
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.post("/query", response_model=QueryResponse)
 async def query(body: QueryRequest):
     try:

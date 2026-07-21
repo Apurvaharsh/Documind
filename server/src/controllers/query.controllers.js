@@ -211,6 +211,148 @@ const askQuestion = async (req, res) => {
     }
 };
 
+// POST /query/stream
+// Forwards the Python SSE stream to the browser while accumulating the answer,
+// so the Query row can still be written once the stream finishes.
+const askQuestionStream = async (req, res) => {
+    try {
+        const { question, documentId, collectionId, conversationId } = req.body;
+
+        if (!question || typeof question !== 'string' || !question.trim()) {
+            return res.status(400).json({ success: false, message: 'A question is required' });
+        }
+
+        const scope = await resolveScope(req.user.id, { documentId, collectionId });
+        if (scope.error) {
+            return res.status(scope.status).json({ success: false, message: scope.error });
+        }
+
+        if (!scope.qdrantDocIds.length) {
+            return res.status(200).json({
+                success: true,
+                text: 'You have no processed documents yet. Upload a PDF and wait for it to reach READY.',
+                sources: [],
+            });
+        }
+
+        const resolved = await resolveConversation(req.user.id, conversationId, question.trim(), {
+            documentId,
+            collectionId,
+        });
+
+        if (resolved.error) {
+            return res.status(resolved.status).json({ success: false, message: resolved.error });
+        }
+
+        const { conversation } = resolved;
+
+        const previous = await prisma.query.findMany({
+            where: { conversationId: conversation.id, answer: { not: null } },
+            orderBy: { createdAt: 'desc' },
+            take: HISTORY_TURNS,
+            select: { question: true, answer: true },
+        });
+
+        const startedAt = Date.now();
+
+        const aiResponse = await fetch(`${AI_SERVICE_URL}/query/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                question: question.trim(),
+                user_id: req.user.id,
+                document_ids: scope.qdrantDocIds,
+                history: previous.reverse(),
+            }),
+        });
+
+        if (!aiResponse.ok || !aiResponse.body) {
+            const detail = await aiResponse.text();
+            throw new Error(`AI service returned ${aiResponse.status}: ${detail}`);
+        }
+
+        // Once these headers are sent the status is fixed at 200, so any later
+        // failure has to be reported as an SSE error event rather than a code.
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+            // Tells nginx and friends not to buffer, which would defeat the point.
+            'X-Accel-Buffering': 'no',
+        });
+
+        // The conversation id is needed by the client immediately, so it can
+        // attach follow-up questions to this thread.
+        res.write(`event: meta\ndata: ${JSON.stringify({
+            conversationId: conversation.id,
+            conversationTitle: conversation.title,
+        })}\n\n`);
+
+        let answer = '';
+        let sources = [];
+        let buffer = '';
+
+        for await (const chunk of aiResponse.body) {
+            const text = Buffer.from(chunk).toString('utf8');
+            res.write(text);
+
+            // Parse alongside forwarding so the finished answer can be stored.
+            buffer += text;
+            let index;
+            while ((index = buffer.indexOf('\n\n')) >= 0) {
+                const frame = buffer.slice(0, index);
+                buffer = buffer.slice(index + 2);
+
+                const event = frame.match(/^event: (.+)$/m)?.[1];
+                const data = frame.match(/^data: (.+)$/m)?.[1];
+                if (!event || !data) continue;
+
+                try {
+                    const parsed = JSON.parse(data);
+                    if (event === 'delta') answer += parsed.text || '';
+                    if (event === 'sources') sources = parsed.sources || [];
+                } catch {
+                    // A partial frame is harmless - it arrives complete next pass.
+                }
+            }
+        }
+
+        const responseMs = Date.now() - startedAt;
+
+        try {
+            await prisma.query.create({
+                data: {
+                    question: question.trim(),
+                    answer,
+                    sources,
+                    responseMs,
+                    userId: req.user.id,
+                    conversationId: conversation.id,
+                    documentId: documentId || null,
+                    collectionId: collectionId || null,
+                },
+            });
+            await prisma.conversation.update({
+                where: { id: conversation.id },
+                data: { updatedAt: new Date() },
+            });
+        } catch (logError) {
+            console.error('Could not save query history:', logError.message);
+        }
+
+        res.end();
+    } catch (error) {
+        console.error('Error streaming answer:', error);
+
+        if (res.headersSent) {
+            res.write(`event: error\ndata: ${JSON.stringify({ message: error.message })}\n\n`);
+            return res.end();
+        }
+
+        return res.status(500).json({ success: false, message: 'Failed to generate an answer' });
+    }
+};
+
 const listQueries = async (req, res) => {
     try {
         const queries = await prisma.query.findMany({
@@ -231,5 +373,6 @@ const listQueries = async (req, res) => {
 
 module.exports = {
     askQuestion,
+    askQuestionStream,
     listQueries,
 };

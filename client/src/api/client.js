@@ -48,6 +48,59 @@ export async function askQuestion(token, question, scope = {}, conversationId) {
   })
 }
 
+/**
+ * Ask a question and receive the answer as it is written.
+ *
+ * `onEvent(name, payload)` is called for each Server-Sent Event:
+ *   meta    -> { conversationId, conversationTitle }
+ *   sources -> { sources, documentsSearched }   (arrives before any text)
+ *   delta   -> { text }                          (one fragment of the answer)
+ *   done    -> { responseMs }
+ *   error   -> { message }
+ */
+export async function askQuestionStream(token, question, scope = {}, conversationId, onEvent) {
+  const response = await fetch(`${API_BASE_URL}/query/stream`, {
+    method: 'POST',
+    headers: authHeaders(token, true),
+    body: JSON.stringify({ question, ...scope, conversationId }),
+  })
+
+  if (!response.ok) {
+    // Errors before the stream starts still arrive as ordinary JSON.
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.message || `Request failed (${response.status})`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+
+    // Frames are separated by a blank line. A partial frame stays in the
+    // buffer until the rest of it arrives.
+    let index
+    while ((index = buffer.indexOf('\n\n')) >= 0) {
+      const frame = buffer.slice(0, index)
+      buffer = buffer.slice(index + 2)
+
+      const name = frame.match(/^event: (.+)$/m)?.[1]
+      const data = frame.match(/^data: (.+)$/m)?.[1]
+      if (!name || !data) continue
+
+      try {
+        onEvent(name, JSON.parse(data))
+      } catch {
+        // Ignore a frame we cannot parse rather than killing the stream.
+      }
+    }
+  }
+}
+
 export async function listConversations(token) {
   return request('/conversations', { headers: authHeaders(token) })
 }

@@ -10,7 +10,11 @@ const {
     listDocuments,
     deleteDocument,
 } = require('../controllers/document.controllers.js');
-const { askQuestion, listQueries } = require('../controllers/query.controllers.js');
+const {
+    askQuestion,
+    askQuestionStream,
+    listQueries,
+} = require('../controllers/query.controllers.js');
 const { getUsage } = require('../controllers/usage.controllers.js');
 const {
     listConversations,
@@ -37,6 +41,7 @@ router.delete('/documents/:id', authenticate, deleteDocument);
 // collectionId -> search every ready document in that collection
 // neither      -> search everything the user owns
 router.post('/query', authenticate, queryLimiter, askQuestion);
+router.post('/query/stream', authenticate, queryLimiter, askQuestionStream);
 router.get('/queries', authenticate, listQueries);
 router.get('/usage', authenticate, getUsage);
 
