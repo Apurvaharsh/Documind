@@ -76,6 +76,7 @@ function ChatView({
   setMessages,
   conversationId,
   onConversationStarted,
+  onThreadUpdated,
   isLoadingThread,
 }) {
   const [draft, setDraft] = useState('')
@@ -157,6 +158,11 @@ function ChatView({
       if (streamError) {
         throw new Error(streamError)
       }
+
+      // Refresh the thread list only now. Doing it when the conversation was
+      // created showed "0 messages", because the Query row is not written
+      // until the stream finishes.
+      onThreadUpdated()
     } catch (error) {
       // Drop the placeholder rather than leaving it spinning forever.
       setMessages((current) => current.filter((message) => message.id !== pendingId))

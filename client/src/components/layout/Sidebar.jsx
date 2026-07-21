@@ -44,9 +44,17 @@ function Sidebar({ activeView, onNavigate, onUploadClick, isOpen, onClose }) {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isOpen, onClose])
 
+  // On a phone the sidebar covers the content, so picking something must
+  // dismiss it. On a laptop it sits alongside and should stay where it is.
+  const closeIfOverlay = () => {
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      onClose()
+    }
+  }
+
   const handleNavigate = (id) => {
     onNavigate(id)
-    onClose()
+    closeIfOverlay()
   }
 
   return (
@@ -63,10 +71,12 @@ function Sidebar({ activeView, onNavigate, onUploadClick, isOpen, onClose }) {
 
       {/* Toggling display rather than sliding a transform: two competing
           translate utilities on one element did not resolve reliably, and
-          hidden/flex is unambiguous. */}
+          hidden/flex is unambiguous.
+          Collapsed at every width now - on a laptop it simply gives its space
+          back to the content, on a phone it is an overlay. */}
       <aside
-        className={`w-[264px] shrink-0 flex-col border-r border-line bg-sidebar md:static md:flex ${
-          isOpen ? 'fixed inset-y-0 left-0 z-40 flex' : 'hidden'
+        className={`w-[264px] shrink-0 flex-col border-r border-line bg-sidebar ${
+          isOpen ? 'fixed inset-y-0 left-0 z-40 flex md:static' : 'hidden'
         }`}
       >
         <div className="flex items-center gap-3 px-5 py-5">
@@ -93,7 +103,7 @@ function Sidebar({ activeView, onNavigate, onUploadClick, isOpen, onClose }) {
             variant="primary"
             onClick={() => {
               onUploadClick()
-              onClose()
+              closeIfOverlay()
             }}
             className="w-full py-3"
           >

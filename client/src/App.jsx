@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCollections } from './hooks/useCollections'
 import { useConversations } from './hooks/useConversations'
 import { useDocuments } from './hooks/useDocuments'
+import { useTheme } from './hooks/useTheme'
 import ConversationList from './components/chat/ConversationList'
 import AppFooter from './components/AppFooter'
 import AppHeader from './components/AppHeader'
@@ -18,12 +19,12 @@ import Toast from './components/ui/Toast'
 function MissingClerkKey() {
   return (
     <main className="mx-auto w-full max-w-xl px-4 py-24">
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-6">
-        <h1 className="text-base font-medium text-amber-900">Clerk setup needed</h1>
-        <p className="mt-2 text-sm leading-6 text-amber-800">
-          Create a <code className="rounded bg-white px-1.5 py-0.5">client/.env</code> file
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 dark:border-amber-900 dark:bg-amber-950">
+        <h1 className="text-base font-medium text-amber-900 dark:text-amber-200">Clerk setup needed</h1>
+        <p className="mt-2 text-sm leading-6 text-amber-800 dark:text-amber-300">
+          Create a <code className="rounded bg-surface px-1.5 py-0.5">client/.env</code> file
           containing{' '}
-          <code className="rounded bg-white px-1.5 py-0.5">
+          <code className="rounded bg-surface px-1.5 py-0.5">
             VITE_CLERK_PUBLISHABLE_KEY=your_key
           </code>
           .
@@ -36,7 +37,12 @@ function MissingClerkKey() {
 function Workspace({ getToken, userId }) {
   const [view, setView] = useState('documents')
   const [search, setSearch] = useState('')
-  const [isSidebarOpen, setSidebarOpen] = useState(false)
+  // Open by default on a laptop, closed on a phone where it would cover
+  // everything.
+  const [isSidebarOpen, setSidebarOpen] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= 768
+  )
+  const { theme, toggle: toggleTheme } = useTheme()
   // "all" | "col:<id>" | "doc:<id>" - lives here so the top bar and the chat
   // thread stay in agreement about what is being searched.
   const [scope, setScope] = useState('all')
@@ -120,7 +126,10 @@ function Workspace({ getToken, userId }) {
         <TopBar
           search={search}
           onSearchChange={setSearch}
-          onMenuClick={() => setSidebarOpen(true)}
+          onMenuClick={() => setSidebarOpen((open) => !open)}
+          isSidebarOpen={isSidebarOpen}
+          theme={theme}
+          onToggleTheme={toggleTheme}
           leading={
             view === 'chat' ? (
               <ScopeSelector
@@ -156,9 +165,10 @@ function Workspace({ getToken, userId }) {
 
           {view === 'chat' ? (
             <div className="flex h-full">
-              {/* Thread list is desktop-only: at phone width the chat itself
-                  needs the whole screen. */}
-              <div className="hidden md:flex">
+              {/* Collapses with the sidebar, so one control clears both rails
+                  and gives the thread the whole window. Always hidden on a
+                  phone, where the chat needs the full screen. */}
+              <div className={isSidebarOpen ? 'hidden md:flex' : 'hidden'}>
                 <ConversationList
                   conversations={chats.conversations}
                   activeId={chats.activeId}
@@ -178,10 +188,8 @@ function Workspace({ getToken, userId }) {
                   setMessages={chats.setMessages}
                   conversationId={chats.activeId}
                   isLoadingThread={chats.isLoadingThread}
-                  onConversationStarted={(id) => {
-                    chats.setActiveId(id)
-                    refreshConversations()
-                  }}
+                  onConversationStarted={(id) => chats.setActiveId(id)}
+                  onThreadUpdated={refreshConversations}
                 />
               </div>
             </div>

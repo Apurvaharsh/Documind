@@ -24,7 +24,7 @@ function ProductMockup() {
           <div className="max-w-[90%] space-y-2">
             <p className="text-sm leading-6 text-ink">
               Either party must give{' '}
-              <span className="rounded bg-amber-100 px-1 font-medium text-amber-900">
+              <span className="rounded bg-amber-100 px-1 font-medium text-amber-900 dark:bg-amber-900 dark:text-amber-100">
                 ninety (90) days written notice
               </span>{' '}
               before the end of the current term, otherwise the agreement renews
@@ -56,9 +56,9 @@ function ProductMockup() {
           <p className="text-xs font-medium text-ink-soft">Documents</p>
           <div className="mt-3 space-y-2">
             {[
-              ['contract.pdf', 'Ready', 'bg-emerald-50 text-emerald-700'],
-              ['amendment.pdf', 'Ready', 'bg-emerald-50 text-emerald-700'],
-              ['invoices.pdf', 'Processing', 'bg-amber-50 text-amber-700'],
+              ['contract.pdf', 'Ready', 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'],
+              ['amendment.pdf', 'Ready', 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'],
+              ['invoices.pdf', 'Processing', 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300'],
             ].map(([name, state, tone]) => (
               <div
                 key={name}

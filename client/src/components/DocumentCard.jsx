@@ -37,7 +37,7 @@ function formatWhen(value) {
 // scannable by file type at a glance.
 function iconTint(fileName = '') {
   return fileName.toLowerCase().endsWith('.pdf')
-    ? 'bg-rose-50 text-rose-500'
+    ? 'bg-rose-50 text-rose-500 dark:bg-rose-950 dark:text-rose-400'
     : 'bg-brand-soft text-brand'
 }
 
@@ -78,7 +78,10 @@ function DocumentCard({ document, collectionName, onDelete, onAsk }) {
       ) : null}
 
       {document.errorMessage ? (
-        <p className="mt-3 line-clamp-2 text-xs text-rose-600" title={document.errorMessage}>
+        <p
+          className="mt-3 line-clamp-2 text-xs text-rose-600 dark:text-rose-400"
+          title={document.errorMessage}
+        >
           {document.errorMessage}
         </p>
       ) : null}
@@ -99,7 +102,7 @@ function DocumentCard({ document, collectionName, onDelete, onAsk }) {
           type="button"
           onClick={() => onDelete(document.id)}
           aria-label={`Delete ${document.originalName}`}
-          className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-rose-50 hover:text-rose-600"
+          className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950 dark:hover:text-rose-400"
         >
           <IconTrash />
         </button>

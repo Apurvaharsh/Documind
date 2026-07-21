@@ -25,7 +25,7 @@ function Toast({ message, tone = 'info', onDismiss }) {
 
   const styles =
     tone === 'error'
-      ? 'border-rose-200 bg-rose-50 text-rose-800'
+      ? 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200'
       : 'border-line bg-surface text-ink-soft'
 
   return (

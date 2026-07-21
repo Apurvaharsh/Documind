@@ -6,6 +6,10 @@
 /* Design tokens for the whole app.
    One accent (indigo) for primary actions, slate neutrals for everything else,
    and three status colours reserved strictly for document state. */
+/* Dark mode is driven by a class on <html>, not the OS setting alone, so the
+   toggle can override the system preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-canvas: #fbfaff;
   --color-sidebar: #f5f4fe;
@@ -20,6 +24,24 @@
   --color-brand-soft: #eef2ff;
   /* Deeper indigo for the wordmark and hover states on the landing page. */
   --color-brand-deep: #3525cd;
+}
+
+/* Every utility above resolves through a variable, so redefining the variables
+   here re-themes the whole app without touching a single component. */
+.dark {
+  --color-canvas: #0f0f14;
+  --color-sidebar: #16161f;
+  --color-surface: #1a1a24;
+  --color-line: #2a2a38;
+  --color-line-strong: #3d3d50;
+  --color-ink: #f1f1f6;
+  --color-ink-soft: #a5a5b8;
+  --color-ink-muted: #71718a;
+  /* Indigo is lifted here: #4f46e5 is too dark to read against a dark surface. */
+  --color-brand: #6366f1;
+  --color-brand-hover: #818cf8;
+  --color-brand-soft: #1e1b3c;
+  --color-brand-deep: #a5b4fc;
 }
 
 :root {

@@ -114,25 +114,25 @@ function ApiKeysPanel({ getToken, userId, onError, onStatus }) {
       </div>
 
       {freshKey ? (
-        <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <div className="flex items-center gap-2 text-amber-800">
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950">
+          <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
             <IconInfo className="h-4 w-4" />
             <span className="text-sm font-medium">Copy this now — it won&rsquo;t be shown again</span>
           </div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 overflow-x-auto whitespace-nowrap rounded border border-amber-200 bg-white px-3 py-2 font-mono text-xs text-ink">
+            <code className="flex-1 overflow-x-auto whitespace-nowrap rounded border border-amber-200 bg-surface px-3 py-2 font-mono text-xs text-ink dark:border-amber-900">
               {freshKey}
             </code>
             <button
               type="button"
               onClick={handleCopy}
               aria-label="Copy key"
-              className="flex items-center justify-center rounded border border-amber-200 bg-white p-2 text-ink-soft transition-colors hover:bg-amber-50"
+              className="flex items-center justify-center rounded border border-amber-200 bg-surface p-2 text-ink-soft transition-colors hover:bg-amber-50 dark:border-amber-900 dark:hover:bg-amber-900"
             >
               <IconCopy className="h-4 w-4" />
             </button>
           </div>
-          {copied ? <span className="text-xs text-amber-800">Copied to clipboard</span> : null}
+          {copied ? <span className="text-xs text-amber-800 dark:text-amber-300">Copied to clipboard</span> : null}
         </div>
       ) : null}
 
