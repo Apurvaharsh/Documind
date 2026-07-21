@@ -1,14 +1,15 @@
 import { SignedIn, SignedOut, useAuth } from '@clerk/clerk-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCollections } from './hooks/useCollections'
 import { useDocuments } from './hooks/useDocuments'
 import ApiKeysCard from './components/ApiKeysCard'
 import AppHeader from './components/AppHeader'
 import AskPanel from './components/AskPanel'
 import CollectionsCard from './components/CollectionsCard'
-import DocumentList from './components/DocumentList'
+import DocumentsView from './components/DocumentsView'
 import SignedOutHero from './components/SignedOutHero'
-import UploadCard from './components/UploadCard'
+import Sidebar from './components/layout/Sidebar'
+import TopBar from './components/layout/TopBar'
 import Toast from './components/ui/Toast'
 
 function MissingClerkKey() {
@@ -30,10 +31,13 @@ function MissingClerkKey() {
 }
 
 function Workspace({ getToken, userId }) {
+  const [view, setView] = useState('documents')
+  const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const fileInputRef = useRef(null)
 
-  // Stable identities so the hooks below do not re-run on every render.
+  // Stable identities so the data hooks do not re-run on every render.
   const handleError = useCallback((message) => {
     setError(message)
     setStatus('')
@@ -63,50 +67,74 @@ function Workspace({ getToken, userId }) {
   }, [userId, refreshDocuments, refreshCollections, clearDocuments, clearCollections])
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
-      <Toast
-        message={error || status}
-        tone={error ? 'error' : 'info'}
-        onDismiss={() => (error ? setError('') : setStatus(''))}
+    <div className="flex h-screen overflow-hidden bg-canvas">
+      <Sidebar
+        activeView={view}
+        onNavigate={setView}
+        onUploadClick={() => {
+          setView('documents')
+          fileInputRef.current?.click()
+        }}
       />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-        {/* Primary column: ask first, because that is why people are here. */}
-        <div className="flex flex-col gap-4">
-          <AskPanel
-            getToken={getToken}
-            documents={docs.documents}
-            collections={cols.collections}
-            onError={handleError}
-          />
-          <DocumentList
-            documents={docs.documents}
-            collections={cols.collections}
-            onDelete={docs.remove}
-          />
-        </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar search={search} onSearchChange={setSearch} />
 
-        <aside className="flex flex-col gap-4">
-          <UploadCard
-            collections={cols.collections}
-            isUploading={docs.isUploading}
-            onUpload={docs.upload}
-          />
-          <CollectionsCard
-            collections={cols.collections}
-            documents={docs.documents}
-            onCreate={cols.create}
-            onAddDocuments={cols.addDocuments}
-          />
-          <ApiKeysCard
-            getToken={getToken}
-            userId={userId}
-            onError={handleError}
-            onStatus={handleStatus}
-          />
-        </aside>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {error || status ? (
+            <div className="px-8 pt-6">
+              <Toast
+                message={error || status}
+                tone={error ? 'error' : 'info'}
+                onDismiss={() => (error ? setError('') : setStatus(''))}
+              />
+            </div>
+          ) : null}
+
+          {view === 'documents' ? (
+            <DocumentsView
+              documents={docs.documents}
+              collections={cols.collections}
+              search={search}
+              isUploading={docs.isUploading}
+              onUpload={docs.upload}
+              onDelete={docs.remove}
+              fileInputRef={fileInputRef}
+            />
+          ) : null}
+
+          {view === 'chat' ? (
+            <div className="mx-auto max-w-3xl px-8 py-7">
+              <h1 className="mb-6 text-[32px] font-bold tracking-tight text-ink">Chat</h1>
+              <AskPanel
+                getToken={getToken}
+                documents={docs.documents}
+                collections={cols.collections}
+                onError={handleError}
+              />
+            </div>
+          ) : null}
+
+          {view === 'settings' ? (
+            <div className="mx-auto max-w-3xl space-y-5 px-8 py-7">
+              <h1 className="text-[32px] font-bold tracking-tight text-ink">Settings</h1>
+              <CollectionsCard
+                collections={cols.collections}
+                documents={docs.documents}
+                onCreate={cols.create}
+                onAddDocuments={cols.addDocuments}
+              />
+              <ApiKeysCard
+                getToken={getToken}
+                userId={userId}
+                onError={handleError}
+                onStatus={handleStatus}
+              />
+            </div>
+          ) : null}
+        </div>
       </div>
-    </main>
+    </div>
   )
 }
 
@@ -118,15 +146,17 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <AppHeader />
+    <>
       <SignedOut>
-        <SignedOutHero />
+        <div className="min-h-screen bg-canvas">
+          <AppHeader />
+          <SignedOutHero />
+        </div>
       </SignedOut>
       <SignedIn>
         <Workspace getToken={getToken} userId={userId} />
       </SignedIn>
-    </div>
+    </>
   )
 }
 

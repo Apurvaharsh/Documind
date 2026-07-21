@@ -4,10 +4,11 @@
    One accent (indigo) for primary actions, slate neutrals for everything else,
    and three status colours reserved strictly for document state. */
 @theme {
-  --color-canvas: #f8fafc;
+  --color-canvas: #fbfaff;
+  --color-sidebar: #f5f4fe;
   --color-surface: #ffffff;
-  --color-line: #e2e8f0;
-  --color-line-strong: #cbd5e1;
+  --color-line: #e8e7f5;
+  --color-line-strong: #d4d2ee;
   --color-ink: #0f172a;
   --color-ink-soft: #475569;
   --color-ink-muted: #94a3b8;
