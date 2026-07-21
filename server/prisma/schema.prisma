@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String     @id @default(cuid())
+  clerkId     String     @unique
+  name        String?
+  email       String     @unique
+  image       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  documents   Document[]
+  queries     Query[]
+  apiKeys     ApiKey[]
+}
+
+// Where a document is in the ingestion pipeline.
+// QUEUED -> PROCESSING -> READY (or FAILED if the worker gave up)
+enum DocumentStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+}
+
+model Document {
+  id            String    @id @default(cuid())
+  title         String
+  originalName  String
+  fileSize      Int
+  mimeType      String
+
+  qdrantDocId   String    @unique
+
+  status        DocumentStatus @default(QUEUED)
+  errorMessage  String?        @db.Text
+  processedAt   DateTime?
+
+  uploadedAt    DateTime  @default(now())
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  queries       Query[]
+}
+
+model Query {
+  id          String    @id @default(cuid())
+
+  question    String
+  answer      String?   @db.Text
+
+  responseMs  Int?
+
+  createdAt   DateTime  @default(now())
+
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  documentId   String
+  document     Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  name        String
+  hashedKey   String    @unique
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime?
+
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
