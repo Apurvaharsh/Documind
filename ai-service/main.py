@@ -13,8 +13,17 @@ from qdrant_client import QdrantClient
 
 from services.pdf_service import extract_pages, chunk_pages
 from services.embedding_service import generate_embeddings, create_embeddings
-from services.qdrant_service import search_qdrant, ensure_collection, delete_document
-from services.llm_service import generate_response, generate_response_stream
+from services.qdrant_service import (
+    search_qdrant,
+    ensure_collection,
+    delete_document,
+    fetch_all_chunks,
+)
+from services.llm_service import (
+    generate_response,
+    generate_response_stream,
+    is_summary_question,
+)
 
 load_dotenv()
 
@@ -148,8 +157,24 @@ def sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
-def retrieve(body: QueryRequest):
-    """Shared retrieval for both the buffered and streaming endpoints."""
+def retrieve(body: QueryRequest) -> tuple[list[dict], bool, bool]:
+    """
+    Pick a retrieval strategy from the question, and return
+    (chunks, is_summary, truncated).
+
+    "Summarise this" is a question about the document as a whole. Nearest
+    neighbour search would hand back the few chunks closest to a vague query
+    vector, and the model would summarise that slice without ever saying it had
+    only seen part of the document. Whole-document questions read the document.
+    """
+    if is_summary_question(body.question):
+        chunks, truncated = fetch_all_chunks(
+            qdrant,
+            user_id=body.user_id,
+            document_ids=body.document_ids,
+        )
+        return chunks, True, truncated
+
     # A follow-up like "what tech did it use?" has nothing to match on by
     # itself, so prepend the previous question for the search only.
     search_text = body.question
@@ -157,12 +182,13 @@ def retrieve(body: QueryRequest):
         search_text = f"{body.history[-1].question} {body.question}"
 
     embedding = generate_embeddings(search_text)
-    return search_qdrant(
+    hits = search_qdrant(
         qdrant,
         embedding,
         user_id=body.user_id,
         document_ids=body.document_ids,
     )
+    return hits, False, False
 
 
 def source_payload(chunks: list[dict]) -> list[dict]:
@@ -190,7 +216,7 @@ async def query_stream(body: QueryRequest):
     def events():
         started = time.time()
         try:
-            best_chunks = retrieve(body)
+            best_chunks, summarise, truncated = retrieve(body)
 
             if not best_chunks:
                 yield sse("sources", {"sources": [], "documentsSearched": 0})
@@ -201,10 +227,14 @@ async def query_stream(body: QueryRequest):
             yield sse("sources", {
                 "sources": source_payload(best_chunks),
                 "documentsSearched": len(set(c["documentId"] for c in best_chunks)),
+                "mode": "summary" if summarise else "search",
+                "truncated": truncated,
             })
 
             history = [(t.question, t.answer) for t in (body.history or [])]
-            for piece in generate_response_stream(best_chunks, body.question, history):
+            for piece in generate_response_stream(
+                best_chunks, body.question, history, summarise, truncated
+            ):
                 yield sse("delta", {"text": piece})
 
             yield sse("done", {"responseMs": int((time.time() - started) * 1000)})
@@ -225,36 +255,19 @@ async def query(body: QueryRequest):
     try:
         overall_start = time.time()
 
-        # Step 1: Embed the question.
-        # A follow-up like "what tech did it use?" has nothing to match on by
-        # itself, so prepend the previous question to give the vector something
-        # concrete to search with. Cheaper than an LLM rewrite, and it only
-        # affects retrieval - the model still sees the real question.
-        search_text = body.question
-        if body.history:
-            search_text = f"{body.history[-1].question} {body.question}"
-
+        # Step 1 & 2: Retrieve. Reads the whole document for a summary request,
+        # nearest-neighbour search otherwise.
         start = time.time()
-        question_embedding = generate_embeddings(search_text)
-        print(f"[Python] Embed question: {(time.time() - start) * 1000:.0f} ms")
-
-        # Step 2: Search Qdrant, scoped to this user (and optionally to a
-        # specific set of documents).
-        start = time.time()
-        best_chunks = search_qdrant(
-            qdrant,
-            question_embedding,
-            user_id=body.user_id,
-            document_ids=body.document_ids,
-        )
-        print(f"[Python] Search Qdrant: {(time.time() - start) * 1000:.0f} ms")
+        best_chunks, summarise, truncated = retrieve(body)
+        print(f"[Python] Retrieval: {(time.time() - start) * 1000:.0f} ms")
 
         scope = (
             f"{len(body.document_ids)} document(s)"
             if body.document_ids
             else "all documents"
         )
-        print(f"[Python] Retrieved {len(best_chunks)} chunks from {scope}")
+        mode = "summary (whole document)" if summarise else "search"
+        print(f"[Python] {mode}: {len(best_chunks)} chunks from {scope}")
 
         if not best_chunks:
             return QueryResponse(
@@ -267,7 +280,9 @@ async def query(body: QueryRequest):
         # Step 3: Generate the answer
         start = time.time()
         history = [(turn.question, turn.answer) for turn in (body.history or [])]
-        answer = generate_response(best_chunks, body.question, history)
+        answer = generate_response(
+            best_chunks, body.question, history, summarise, truncated
+        )
         print(f"[Python] LLM response: {(time.time() - start) * 1000:.0f} ms")
         print(f"[Python] Total /query: {(time.time() - overall_start) * 1000:.0f} ms\n")
 

@@ -11,6 +11,71 @@ OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL")
 
 NOT_FOUND = "Not found in your documents."
 
+# Questions about a document as a whole rather than a fact inside it. These
+# need every chunk, not the few nearest a query vector.
+SUMMARY_PATTERNS = (
+    "summarise",
+    "summarize",
+    "summary",
+    "tl;dr",
+    "tldr",
+    "overview",
+    "what is this about",
+    "what's this about",
+    "what is this document about",
+    "key points",
+    "main points",
+    "key takeaways",
+    "gist of",
+    "outline of",
+    "walk me through",
+)
+
+
+def is_summary_question(question: str) -> bool:
+    """
+    Cheap intent check. Deliberately keyword-based: an LLM classifier would be
+    more robust but adds a whole round trip before the real work starts, and a
+    false negative here just falls back to ordinary search.
+    """
+    lowered = question.lower()
+    return any(pattern in lowered for pattern in SUMMARY_PATTERNS)
+
+
+def build_summary_prompt(chunks: list[dict], question: str, truncated: bool = False) -> str:
+    """
+    Summarising is the opposite job to answering: cover everything rather than
+    locate one fact, so "not found" makes no sense as an output here.
+    """
+    by_file: dict[str, list[dict]] = {}
+    for chunk in chunks:
+        by_file.setdefault(chunk["fileName"] or "document", []).append(chunk)
+
+    sections = []
+    for file_name, file_chunks in by_file.items():
+        body = "\n".join(c["text"] for c in file_chunks)
+        sections.append(f"=== {file_name} ===\n{body}")
+
+    note = (
+        "\nNote: the document was too long to include in full. Summarise what is "
+        "present and say so at the end.\n"
+        if truncated
+        else ""
+    )
+
+    return (
+        "Summarise the document content below.\n\n"
+        f"{chr(10).join(sections)}\n"
+        f"{note}\n"
+        "Rules:\n"
+        "- Cover the whole content, not just the opening.\n"
+        "- Keep the document's own terms, names and figures.\n"
+        "- Use short paragraphs or bullet points.\n"
+        "- Add nothing that is not in the text above.\n\n"
+        f"Request: {question}\n\n"
+        "Summary:"
+    )
+
 
 # How many earlier turns to include. Enough for "it"/"that one" to resolve,
 # short enough that the context does not crowd out the retrieved chunks.
@@ -71,6 +136,8 @@ def generate_response_stream(
     best_chunks: list[dict],
     question: str,
     history: list[tuple[str, str]] | None = None,
+    summarise: bool = False,
+    truncated: bool = False,
 ):
     """
     Yield the answer in pieces as the model produces it.
@@ -79,7 +146,11 @@ def generate_response_stream(
     that the first words arrive in a second or two instead of after the whole
     answer is finished.
     """
-    prompt = build_prompt(best_chunks, question, history)
+    prompt = (
+        build_summary_prompt(best_chunks, question, truncated)
+        if summarise
+        else build_prompt(best_chunks, question, history)
+    )
 
     if PROVIDER == "ollama":
         with requests.post(
@@ -128,8 +199,14 @@ def generate_response(
     best_chunks: list[dict],
     question: str,
     history: list[tuple[str, str]] | None = None,
+    summarise: bool = False,
+    truncated: bool = False,
 ) -> str:
-    prompt = build_prompt(best_chunks, question, history)
+    prompt = (
+        build_summary_prompt(best_chunks, question, truncated)
+        if summarise
+        else build_prompt(best_chunks, question, history)
+    )
 
     if PROVIDER == "ollama":
         response = requests.post(

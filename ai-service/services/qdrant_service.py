@@ -126,6 +126,56 @@ def search_qdrant(
     ]
 
 
+# Ceiling on a whole-document read. Prefill cost is linear in the number of
+# tokens, so an unbounded fetch on a large PDF would stall for minutes.
+MAX_WHOLE_DOC_CHUNKS = int(os.getenv("MAX_WHOLE_DOC_CHUNKS", "40"))
+
+
+def fetch_all_chunks(
+    qdrant_client,
+    user_id: str,
+    document_ids: list[str] | None = None,
+    collection_name: str = COLLECTION_NAME,
+    limit: int = MAX_WHOLE_DOC_CHUNKS,
+) -> tuple[list[dict], bool]:
+    """
+    Every chunk the user can see, in document order.
+
+    Similarity search is the wrong tool for "summarise this" - it returns the
+    few chunks nearest a vague query vector, so the model summarises an
+    arbitrary slice and never says so. This walks the document instead.
+
+    Returns (chunks, truncated) so the caller can tell the user when the
+    document was too large to read in full.
+    """
+    points, _ = qdrant_client.scroll(
+        collection_name=collection_name,
+        scroll_filter=build_filter(user_id, document_ids),
+        limit=limit + 1,  # one extra, purely to detect truncation
+        with_payload=True,
+    )
+
+    truncated = len(points) > limit
+    points = points[:limit]
+
+    chunks = [
+        {
+            "fileName": p.payload.get("fileName"),
+            "documentId": p.payload.get("documentId"),
+            "chunkIndex": p.payload.get("chunkIndex"),
+            "page": p.payload.get("page"),
+            "text": p.payload.get("text"),
+            # No similarity score here - nothing was ranked.
+            "score": 1.0,
+        }
+        for p in points
+    ]
+
+    # Reading order: group a document's chunks together, then by position.
+    chunks.sort(key=lambda c: (c["fileName"] or "", c["chunkIndex"] or 0))
+    return chunks, truncated
+
+
 def delete_document(
     qdrant_client,
     user_id: str,
