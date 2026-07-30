@@ -1,0 +1,193 @@
+import os
+
+from dotenv import load_dotenv
+from qdrant_client.models import (
+    Filter,
+    FieldCondition,
+    MatchValue,
+    MatchAny,
+    VectorParams,
+    Distance,
+    PayloadSchemaType,
+)
+
+load_dotenv()
+
+# IMPORTANT: one collection holds vectors from exactly one embedding model.
+#
+# nomic-embed-text (local) and Gemini both produce 768 numbers, so Qdrant will
+# happily accept and compare them - and return confident nonsense, because they
+# are different coordinate systems. Give each environment its own collection
+# (pdf-docs-dev, pdf-docs-prod) and never point two providers at the same one.
+#
+# Changing the embedding model means re-ingesting every document.
+COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "pdf-docs")
+VECTOR_SIZE = int(os.getenv("EMBEDDING_DIM", "768"))
+
+# How many chunks to feed the model.
+#
+# This is the main latency dial. Almost all of the wait is the model READING
+# the prompt, not writing the answer - measured on CPU with gemma3:1b:
+#
+#   top_k=10 -> 3680 tokens -> 70.2s reading, 0.3s writing
+#   top_k=5  -> 2356 tokens -> 44.2s reading, 0.6s writing
+#   top_k=3  -> 1389 tokens -> 25.5s reading, 0.2s writing
+#
+# Hosted models prefill far faster, so this can be raised when AI_PROVIDER
+# is gemini.
+RETRIEVAL_LIMIT = int(os.getenv("RETRIEVAL_LIMIT", "5"))
+
+# Payload fields we filter on. Qdrant Cloud runs with strict mode enabled
+# (unindexed_filtering_retrieve = false), which means a filter on a field with
+# no index is rejected with "Bad request: Index required but not found".
+# So these indexes are not an optimisation - filtering does not work without them.
+INDEXED_FIELDS = ["userId", "documentId"]
+
+
+def ensure_collection(qdrant_client, collection_name: str = COLLECTION_NAME) -> None:
+    """
+    Make sure the collection and its payload indexes exist.
+    Safe to call on every startup - it only creates what is missing.
+    """
+    if not qdrant_client.collection_exists(collection_name):
+        qdrant_client.create_collection(
+            collection_name=collection_name,
+            vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+        )
+        print(f"[qdrant] created collection '{collection_name}'")
+
+    for field in INDEXED_FIELDS:
+        try:
+            qdrant_client.create_payload_index(
+                collection_name=collection_name,
+                field_name=field,
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+            print(f"[qdrant] created payload index on '{field}'")
+        except Exception:
+            # Already exists - Qdrant has no "create if not exists" for indexes.
+            pass
+
+
+def build_filter(user_id: str, document_ids: list[str] | None = None) -> Filter:
+    """
+    Build the Qdrant filter for a search.
+
+    user_id is always required. Without it a search would read across every
+    user's chunks, which is how one user's PDF could end up in another user's
+    answer. document_ids narrows further:
+      - None / empty -> search everything this user owns
+      - one id       -> search a single document
+      - several ids  -> cross-document search (e.g. a whole collection)
+    """
+    conditions = [
+        FieldCondition(key="userId", match=MatchValue(value=user_id)),
+    ]
+
+    if document_ids:
+        conditions.append(
+            FieldCondition(key="documentId", match=MatchAny(any=document_ids))
+        )
+
+    return Filter(must=conditions)
+
+
+def search_qdrant(
+    qdrant_client,
+    question_embedding: list[float],
+    user_id: str,
+    document_ids: list[str] | None = None,
+    collection_name: str = COLLECTION_NAME,
+    limit: int = RETRIEVAL_LIMIT,
+) -> list[dict]:
+    """
+    Search for the chunks closest to the question embedding, restricted to
+    documents the requesting user owns.
+    """
+    results = qdrant_client.query_points(
+        collection_name=collection_name,
+        query=question_embedding,
+        query_filter=build_filter(user_id, document_ids),
+        limit=limit,
+        with_payload=True,
+    ).points
+
+    return [
+        {
+            "fileName": hit.payload.get("fileName"),
+            "documentId": hit.payload.get("documentId"),
+            "chunkIndex": hit.payload.get("chunkIndex"),
+            # Absent on anything ingested before page tracking existed.
+            "page": hit.payload.get("page"),
+            "text": hit.payload.get("text"),
+            "score": hit.score,
+        }
+        for hit in results
+    ]
+
+
+# Ceiling on a whole-document read. Prefill cost is linear in the number of
+# tokens, so an unbounded fetch on a large PDF would stall for minutes.
+MAX_WHOLE_DOC_CHUNKS = int(os.getenv("MAX_WHOLE_DOC_CHUNKS", "40"))
+
+
+def fetch_all_chunks(
+    qdrant_client,
+    user_id: str,
+    document_ids: list[str] | None = None,
+    collection_name: str = COLLECTION_NAME,
+    limit: int = MAX_WHOLE_DOC_CHUNKS,
+) -> tuple[list[dict], bool]:
+    """
+    Every chunk the user can see, in document order.
+
+    Similarity search is the wrong tool for "summarise this" - it returns the
+    few chunks nearest a vague query vector, so the model summarises an
+    arbitrary slice and never says so. This walks the document instead.
+
+    Returns (chunks, truncated) so the caller can tell the user when the
+    document was too large to read in full.
+    """
+    points, _ = qdrant_client.scroll(
+        collection_name=collection_name,
+        scroll_filter=build_filter(user_id, document_ids),
+        limit=limit + 1,  # one extra, purely to detect truncation
+        with_payload=True,
+    )
+
+    truncated = len(points) > limit
+    points = points[:limit]
+
+    chunks = [
+        {
+            "fileName": p.payload.get("fileName"),
+            "documentId": p.payload.get("documentId"),
+            "chunkIndex": p.payload.get("chunkIndex"),
+            "page": p.payload.get("page"),
+            "text": p.payload.get("text"),
+            # No similarity score here - nothing was ranked.
+            "score": 1.0,
+        }
+        for p in points
+    ]
+
+    # Reading order: group a document's chunks together, then by position.
+    chunks.sort(key=lambda c: (c["fileName"] or "", c["chunkIndex"] or 0))
+    return chunks, truncated
+
+
+def delete_document(
+    qdrant_client,
+    user_id: str,
+    document_id: str,
+    collection_name: str = COLLECTION_NAME,
+) -> None:
+    """
+    Delete every chunk belonging to one document.
+    Scoped by user_id as well so a caller cannot delete someone else's vectors.
+    """
+    qdrant_client.delete(
+        collection_name=collection_name,
+        points_selector=build_filter(user_id, [document_id]),
+        wait=True,
+    )

@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String     @id @default(cuid())
+  clerkId     String     @unique
+  name        String?
+  email       String     @unique
+  image       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  documents     Document[]
+  queries       Query[]
+  apiKeys       ApiKey[]
+  collections   Collection[]
+  conversations Conversation[]
+}
+
+// A chat thread. Groups Query rows so follow-up questions can be answered with
+// the earlier turns in view, and so a thread survives a page refresh.
+model Conversation {
+  id           String    @id @default(cuid())
+
+  // Taken from the first question asked, trimmed. Cheaper and more predictable
+  // than asking the model to name the thread.
+  title        String
+
+  // The search scope the thread was started with, so reopening it keeps
+  // searching the same documents.
+  documentId   String?
+  collectionId String?
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  queries      Query[]
+
+  @@index([userId, updatedAt])
+}
+
+// A named group of documents, so a question can be asked across all of them
+// at once ("cross-document search"). A document belongs to at most one
+// collection - keeping it one-to-many makes the queries much easier to follow
+// than a many-to-many join table.
+model Collection {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  documents   Document[]
+
+  // Two collections of the same name per user would be confusing to pick between.
+  @@unique([userId, name])
+}
+
+// Where a document is in the ingestion pipeline.
+// QUEUED -> PROCESSING -> READY (or FAILED if the worker gave up)
+enum DocumentStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+}
+
+model Document {
+  id            String    @id @default(cuid())
+  title         String
+  originalName  String
+  fileSize      Int
+  mimeType      String
+
+  qdrantDocId   String    @unique
+
+  status        DocumentStatus @default(QUEUED)
+  errorMessage  String?        @db.Text
+  processedAt   DateTime?
+
+  uploadedAt    DateTime  @default(now())
+
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Optional - a document can sit on its own, outside any collection.
+  // onDelete: SetNull means deleting a collection keeps the documents.
+  collectionId  String?
+  collection    Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  queries       Query[]
+}
+
+model Query {
+  id          String    @id @default(cuid())
+
+  question    String
+  answer      String?   @db.Text
+
+  // Which chunks the answer came from, so reopening a thread still shows the
+  // source cards. Stored as JSON because it is display data, never queried.
+  sources     Json?
+
+  responseMs  Int?
+
+  createdAt   DateTime  @default(now())
+
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Both optional, because a question can be asked against:
+  //   one document      -> documentId set
+  //   a whole collection-> collectionId set
+  //   everything owned  -> both null
+  documentId   String?
+  document     Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  collectionId String?
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  name        String
+  hashedKey   String    @unique
+
+  // Last 4 characters of the raw key, kept so the UI can show
+  // "cwp_******4f2a". The hash is one-way, so without this there is no way
+  // to display anything identifiable about a key after it is created.
+  maskedKey   String?
+
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime?
+
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

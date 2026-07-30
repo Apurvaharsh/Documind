@@ -1,0 +1,106 @@
+/* Inter is what the design specifies. Without this the app silently fell back
+   to the system sans-serif, which is why type looked slightly off. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* Design tokens for the whole app.
+   One accent (indigo) for primary actions, slate neutrals for everything else,
+   and three status colours reserved strictly for document state. */
+/* Dark mode is driven by a class on <html>, not the OS setting alone, so the
+   toggle can override the system preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-canvas: #fbfaff;
+  --color-sidebar: #f5f4fe;
+  --color-surface: #ffffff;
+  --color-line: #e8e7f5;
+  --color-line-strong: #d4d2ee;
+  --color-ink: #0f172a;
+  --color-ink-soft: #475569;
+  --color-ink-muted: #94a3b8;
+  --color-brand: #4f46e5;
+  --color-brand-hover: #4338ca;
+  --color-brand-soft: #eef2ff;
+  /* Deeper indigo for the wordmark and hover states on the landing page. */
+  --color-brand-deep: #3525cd;
+}
+
+/* Every utility above resolves through a variable, so redefining the variables
+   here re-themes the whole app without touching a single component. */
+.dark {
+  --color-canvas: #0f0f14;
+  --color-sidebar: #16161f;
+  --color-surface: #1a1a24;
+  --color-line: #2a2a38;
+  --color-line-strong: #3d3d50;
+  --color-ink: #f1f1f6;
+  --color-ink-soft: #a5a5b8;
+  --color-ink-muted: #71718a;
+  /* Indigo is lifted here: #4f46e5 is too dark to read against a dark surface. */
+  --color-brand: #6366f1;
+  --color-brand-hover: #818cf8;
+  --color-brand-soft: #1e1b3c;
+  --color-brand-deep: #a5b4fc;
+}
+
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+/* Visible for keyboard users, absent for mouse clicks. */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* Typing indicator shown while an answer is being generated. */
+.typing-dot {
+  animation: typing 1.4s infinite ease-in-out both;
+}
+.typing-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+/* Respect a reduced-motion preference: keep the dots visible but still. */
+@media (prefers-reduced-motion: reduce) {
+  .typing-dot {
+    animation: none;
+    transform: scale(1);
+  }
+}
