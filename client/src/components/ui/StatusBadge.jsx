@@ -1,12 +1,15 @@
-// Colour here is reserved for document state and nothing else. If a green
-// badge shows up somewhere decorative, this rule has been broken.
-// These sit outside the CSS-variable palette because they carry meaning, so
-// each needs an explicit dark counterpart.
+/**
+ * Document state, and nothing else.
+ *
+ * The four tones resolve through semantic tokens, so neither this file nor any
+ * caller needs a `dark:` variant — the palette handles it.
+ */
+
 const STYLES = {
-  QUEUED: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
-  PROCESSING: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
-  READY: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
-  FAILED: 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300',
+  QUEUED: 'bg-neutral-soft text-ink-soft',
+  PROCESSING: 'bg-warn-soft text-warn',
+  READY: 'bg-ok-soft text-ok',
+  FAILED: 'bg-danger-soft text-danger',
 }
 
 const LABELS = {
@@ -16,15 +19,31 @@ const LABELS = {
   FAILED: 'Failed',
 }
 
-function StatusBadge({ status }) {
+// A dot rather than an icon: at 6px an icon is mush, and the dot can carry the
+// only motion in the component — which is exactly where attention belongs.
+const DOTS = {
+  QUEUED: 'bg-ink-faint',
+  PROCESSING: 'bg-warn',
+  READY: 'bg-ok',
+  FAILED: 'bg-danger',
+}
+
+function StatusBadge({ status, className = '' }) {
+  const key = STYLES[status] ? status : 'QUEUED'
+
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${STYLES[status] || STYLES.QUEUED}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${STYLES[key]} ${className}`}
     >
-      {status === 'PROCESSING' ? (
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-      ) : null}
-      {LABELS[status] || status}
+      <span className="relative flex h-1.5 w-1.5 shrink-0">
+        {key === 'PROCESSING' ? (
+          // A ping ring on top of a solid dot: the ring says "still working",
+          // the dot keeps the badge legible when the ring is mid-fade.
+          <span className={`absolute inline-flex h-full w-full animate-ping rounded-full ${DOTS[key]} opacity-75`} />
+        ) : null}
+        <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${DOTS[key]}`} />
+      </span>
+      {LABELS[key] || status}
     </span>
   )
 }

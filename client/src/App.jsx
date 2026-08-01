@@ -15,20 +15,28 @@ import SignedOutHero from './components/SignedOutHero'
 import Sidebar from './components/layout/Sidebar'
 import TopBar from './components/layout/TopBar'
 import Toast from './components/ui/Toast'
+import { IconAlert } from './components/ui/icons'
 
 function MissingClerkKey() {
   return (
-    <main className="mx-auto w-full max-w-xl px-4 py-24">
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 dark:border-amber-900 dark:bg-amber-950">
-        <h1 className="text-base font-medium text-amber-900 dark:text-amber-200">Clerk setup needed</h1>
-        <p className="mt-2 text-sm leading-6 text-amber-800 dark:text-amber-300">
-          Create a <code className="rounded bg-surface px-1.5 py-0.5">client/.env</code> file
-          containing{' '}
-          <code className="rounded bg-surface px-1.5 py-0.5">
-            VITE_CLERK_PUBLISHABLE_KEY=your_key
-          </code>
-          .
+    <main className="mx-auto flex min-h-screen w-full max-w-xl items-center px-5 py-16">
+      <div className="w-full rounded-2xl border border-warn-line bg-surface p-6 shadow-lg">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-warn-soft text-warn">
+          <IconAlert className="h-5 w-5" />
+        </span>
+
+        <h1 className="mt-4 font-display text-heading text-ink">Clerk setup needed</h1>
+        <p className="mt-2 text-sm leading-6 text-ink-soft">
+          Create a{' '}
+          <code className="rounded border border-line bg-surface-sunken px-1.5 py-0.5 font-mono text-xs">
+            client/.env
+          </code>{' '}
+          file containing your publishable key:
         </p>
+
+        <pre className="mt-3 overflow-x-auto rounded-lg border border-line bg-surface-sunken px-3 py-2.5 font-mono text-xs text-ink">
+          VITE_CLERK_PUBLISHABLE_KEY=your_key
+        </pre>
       </div>
     </main>
   )
@@ -43,7 +51,7 @@ function Workspace({ getToken, userId }) {
     () => typeof window !== 'undefined' && window.innerWidth >= 768
   )
   const { theme, toggle: toggleTheme } = useTheme()
-  // "all" | "col:<id>" | "doc:<id>" - lives here so the top bar and the chat
+  // "all" | "col:<id>" | "doc:<id>" — lives here so the top bar and the chat
   // thread stay in agreement about what is being searched.
   const [scope, setScope] = useState('all')
   const [status, setStatus] = useState('')
@@ -63,7 +71,7 @@ function Workspace({ getToken, userId }) {
 
   // Chat carries its own conversation rail, so leaving the main sidebar open
   // there would put three columns before the actual thread. It collapses on
-  // the way in and comes back on the way out; the hamburger still overrides.
+  // the way in and comes back on the way out; the toggle still overrides.
   const goToView = useCallback((nextView) => {
     setView(nextView)
     const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768
@@ -111,6 +119,8 @@ function Workspace({ getToken, userId }) {
     clearConversations,
   ])
 
+  const isChat = view === 'chat'
+
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
       {/* Floats above the layout, so a message never shifts the page. */}
@@ -125,6 +135,8 @@ function Workspace({ getToken, userId }) {
         onNavigate={goToView}
         isOpen={isSidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        // On a phone in chat, the drawer belongs to the conversation rail.
+        mobileHidden={isChat}
         onUploadClick={() => {
           goToView('documents')
           fileInputRef.current?.click()
@@ -140,7 +152,7 @@ function Workspace({ getToken, userId }) {
           theme={theme}
           onToggleTheme={toggleTheme}
           leading={
-            view === 'chat' ? (
+            isChat ? (
               <ScopeSelector
                 scope={scope}
                 onScopeChange={setScope}
@@ -154,7 +166,7 @@ function Workspace({ getToken, userId }) {
 
         {/* Chat scrolls its own thread and pins a composer, so the outer
             container must not scroll as well. */}
-        <div className={`min-h-0 flex-1 ${view === 'chat' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <div className={`min-h-0 flex-1 ${isChat ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {view === 'documents' ? (
             <DocumentsView
               documents={docs.documents}
@@ -172,16 +184,36 @@ function Workspace({ getToken, userId }) {
             />
           ) : null}
 
-          {view === 'chat' ? (
-            <div className="flex h-full">
+          {isChat ? (
+            <div className="relative flex h-full">
+              {/* Scrim for the rail-as-drawer on a phone. */}
+              {isSidebarOpen ? (
+                <button
+                  type="button"
+                  aria-label="Close conversations"
+                  onClick={() => setSidebarOpen(false)}
+                  className="animate-fade-in fixed inset-0 z-30 bg-overlay backdrop-blur-[2px] md:hidden"
+                />
+              ) : null}
+
               {/* This rail is the chat's own navigation, so it stays put when
-                  the main sidebar collapses. Hidden on a phone, where the
-                  thread needs the whole screen. */}
-              <div className="hidden md:flex">
+                  the main sidebar collapses. On a phone it is the drawer the
+                  top-bar toggle opens — which is the only way conversations
+                  were ever reachable there. */}
+              <div
+                className={`hidden md:flex ${
+                  isSidebarOpen ? 'fixed inset-y-0 left-0 z-40 flex shadow-xl md:static md:shadow-none' : ''
+                }`}
+              >
                 <ConversationList
                   conversations={chats.conversations}
                   activeId={chats.activeId}
-                  onOpen={chats.open}
+                  onOpen={(id) => {
+                    chats.open(id)
+                    if (window.matchMedia('(max-width: 767px)').matches) {
+                      setSidebarOpen(false)
+                    }
+                  }}
                   onNew={chats.startNew}
                   onDelete={chats.remove}
                   onHome={() => goToView('documents')}
@@ -190,6 +222,10 @@ function Workspace({ getToken, userId }) {
 
               <div className="min-w-0 flex-1">
                 <ChatView
+                  // A different conversation is a different thread: remounting
+                  // clears the draft, the scroll position and any in-flight
+                  // stream, instead of carrying them across.
+                  key={chats.activeId || 'new'}
                   getToken={getToken}
                   scope={scope}
                   documents={docs.documents}

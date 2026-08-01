@@ -1,7 +1,37 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
 
+/**
+ * fetch(), with a network failure translated into something a person can act
+ * on.
+ *
+ * A refused connection rejects with `TypeError: Failed to fetch` — an internal
+ * browser string that says nothing about what broke or what to do. It reached
+ * the toast verbatim, so the first thing anyone saw after signing in with the
+ * API down was "Failed to fetch".
+ *
+ * The distinction matters: a TypeError here means the request never reached
+ * the server at all. An HTTP error, however unpleasant, is handled below and
+ * carries a real message from the API.
+ */
+async function fetchOrExplain(url, options) {
+  try {
+    return await fetch(url, options)
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw error
+    }
+    // The original TypeError is kept as the cause: the message shown to the
+    // reader is deliberately non-technical, so the technical detail has to
+    // survive somewhere for whoever is debugging it.
+    throw new Error(
+      `Cannot reach the DocuMind server at ${API_BASE_URL}. Check that it is running.`,
+      { cause: error }
+    )
+  }
+}
+
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, options)
+  const response = await fetchOrExplain(`${API_BASE_URL}${path}`, options)
   const contentType = response.headers.get('content-type') || ''
   const data = contentType.includes('application/json')
     ? await response.json()
@@ -57,47 +87,79 @@ export async function askQuestion(token, question, scope = {}, conversationId) {
  *   delta   -> { text }                          (one fragment of the answer)
  *   done    -> { responseMs }
  *   error   -> { message }
+ *
+ * `signal` aborts the request. Generation runs for tens of seconds on CPU, so
+ * the reader has to be interruptible or "Stop" cannot mean anything. Aborting
+ * resolves normally rather than throwing: the caller asked for this, so it is
+ * not an error, and every partial token already delivered stays on screen.
  */
-export async function askQuestionStream(token, question, scope = {}, conversationId, onEvent) {
-  const response = await fetch(`${API_BASE_URL}/query/stream`, {
-    method: 'POST',
-    headers: authHeaders(token, true),
-    body: JSON.stringify({ question, ...scope, conversationId }),
-  })
+export async function askQuestionStream(
+  token,
+  question,
+  scope = {},
+  conversationId,
+  onEvent,
+  signal
+) {
+  let reader
 
-  if (!response.ok) {
-    // Errors before the stream starts still arrive as ordinary JSON.
-    const data = await response.json().catch(() => ({}))
-    throw new Error(data.message || `Request failed (${response.status})`)
-  }
+  // The whole exchange is wrapped, not just the read loop. Retrieval alone
+  // takes seconds before a single byte comes back, so Stop is most likely to
+  // be pressed while the request is still in flight — and an abort there used
+  // to escape as "signal is aborted without reason" and surface to the reader
+  // as an error toast for something they deliberately did.
+  try {
+    const response = await fetchOrExplain(`${API_BASE_URL}/query/stream`, {
+      method: 'POST',
+      headers: authHeaders(token, true),
+      body: JSON.stringify({ question, ...scope, conversationId }),
+      signal,
+    })
 
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
+    if (!response.ok) {
+      // Errors before the stream starts still arrive as ordinary JSON.
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data.message || `Request failed (${response.status})`)
+    }
 
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
+    reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
 
-    buffer += decoder.decode(value, { stream: true })
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
 
-    // Frames are separated by a blank line. A partial frame stays in the
-    // buffer until the rest of it arrives.
-    let index
-    while ((index = buffer.indexOf('\n\n')) >= 0) {
-      const frame = buffer.slice(0, index)
-      buffer = buffer.slice(index + 2)
+      buffer += decoder.decode(value, { stream: true })
 
-      const name = frame.match(/^event: (.+)$/m)?.[1]
-      const data = frame.match(/^data: (.+)$/m)?.[1]
-      if (!name || !data) continue
+      // Frames are separated by a blank line. A partial frame stays in the
+      // buffer until the rest of it arrives.
+      let index
+      while ((index = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0, index)
+        buffer = buffer.slice(index + 2)
 
-      try {
-        onEvent(name, JSON.parse(data))
-      } catch {
-        // Ignore a frame we cannot parse rather than killing the stream.
+        const name = frame.match(/^event: (.+)$/m)?.[1]
+        const data = frame.match(/^data: (.+)$/m)?.[1]
+        if (!name || !data) continue
+
+        try {
+          onEvent(name, JSON.parse(data))
+        } catch {
+          // Ignore a frame we cannot parse rather than killing the stream.
+        }
       }
     }
+  } catch (error) {
+    // A deliberate stop is the expected end of the stream, not a failure.
+    if (error.name !== 'AbortError') {
+      throw error
+    }
+  } finally {
+    // Releasing the lock lets the body cancel cleanly on abort instead of
+    // leaving the connection held open. Optional-chained on `reader` itself
+    // now: an abort during the fetch means the reader was never created.
+    reader?.releaseLock?.()
   }
 }
 

@@ -8,6 +8,14 @@ const base = {
   strokeWidth: 1.75,
   strokeLinecap: 'round',
   strokeLinejoin: 'round',
+  // A floor on the rendered size. Every icon takes its dimensions from a
+  // Tailwind class in `className`, but `className` *replaces* the default
+  // rather than extending it — so a caller passing only a colour silently
+  // strips h-/w- and the SVG expands to fill whatever contains it.
+  // These are presentation attributes, which any CSS rule outranks, so a real
+  // h-4/w-4 still wins and this only catches the mistake.
+  width: 20,
+  height: 20,
 }
 
 export function IconFile({ className = 'h-5 w-5' }) {
@@ -226,6 +234,122 @@ export function IconTrash({ className = 'h-4 w-4' }) {
     <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
       <path d="M4 7h16M10 11v6M14 11v6" />
       <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" />
+    </svg>
+  )
+}
+
+export function IconCheck({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="m4 12.5 5 5L20 6.5" />
+    </svg>
+  )
+}
+
+export function IconAlert({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5v5" />
+      <path d="M12 16.2h.01" />
+    </svg>
+  )
+}
+
+/* A filled square, not an outlined one: "stop" should read as a solid block at
+   any size, and a 2px-stroked 8px square is almost entirely stroke. */
+export function IconStop({ className = 'h-3.5 w-3.5' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <rect x="6" y="6" width="12" height="12" rx="2.5" />
+    </svg>
+  )
+}
+
+/* Send. An upward arrow rather than a paper plane — it is the convention every
+   chat surface has converged on, and it stays legible at 16px where a plane
+   turns to mush. */
+export function IconArrowUp({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} strokeWidth={2.25} aria-hidden="true">
+      <path d="M12 19V5" />
+      <path d="m5.5 11.5 6.5-6.5 6.5 6.5" />
+    </svg>
+  )
+}
+
+export function IconLayers({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="m12 3 9 5-9 5-9-5z" />
+      <path d="m3 13 9 5 9-5" />
+    </svg>
+  )
+}
+
+export function IconKey({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <circle cx="8" cy="14" r="4" />
+      <path d="m11 11 8-8M17 5l2 2M14.5 7.5l2 2" />
+    </svg>
+  )
+}
+
+export function IconUser({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </svg>
+  )
+}
+
+export function IconGauge({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="M4 18a8 8 0 1 1 16 0" />
+      <path d="m12 14 4-4" />
+    </svg>
+  )
+}
+
+/* Panel-collapse, not a hamburger. A hamburger means "open a menu"; this
+   control shows and hides a rail that is already part of the layout. */
+export function IconPanelLeft({ className = 'h-4.5 w-4.5' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M10 4v16" />
+    </svg>
+  )
+}
+
+/* The return-key glyph, for the "press Enter to send" hint. */
+export function IconCornerDownLeft({ className = 'h-3 w-3' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="M20 5v6a3 3 0 0 1-3 3H5" />
+      <path d="m9 10-4 4 4 4" />
+    </svg>
+  )
+}
+
+export function IconSparkle({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="M12 3.5 13.7 9l5.5 1.7-5.5 1.7L12 18l-1.7-5.6L4.8 10.7 10.3 9z" />
+      <path d="M18.5 3.5v3M20 5h-3" />
+    </svg>
+  )
+}
+
+export function IconDrag({ className = 'h-6 w-6' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...base} aria-hidden="true">
+      <path d="M12 15V4" />
+      <path d="m8 8 4-4 4 4" />
+      <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
     </svg>
   )
 }

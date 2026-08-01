@@ -2,16 +2,17 @@ import { useUser } from '@clerk/clerk-react'
 import { useEffect, useState } from 'react'
 import { getUsage } from '../../api/client'
 import CollectionsCard from '../CollectionsCard'
+import { IconGauge, IconKey, IconLayers, IconUser } from '../ui/icons'
 import ApiKeysPanel from './ApiKeysPanel'
 import UsageCard from './UsageCard'
 
 // "Collections" is not in the original design, but it has to live somewhere
 // reachable and it is closer to settings than to the document grid.
 const TABS = [
-  { id: 'profile', label: 'Profile' },
-  { id: 'keys', label: 'API keys' },
-  { id: 'usage', label: 'Usage' },
-  { id: 'collections', label: 'Collections' },
+  { id: 'keys', label: 'API keys', Icon: IconKey },
+  { id: 'usage', label: 'Usage', Icon: IconGauge },
+  { id: 'collections', label: 'Collections', Icon: IconLayers },
+  { id: 'profile', label: 'Profile', Icon: IconUser },
 ]
 
 function ProfileTab() {
@@ -24,15 +25,16 @@ function ProfileTab() {
   ]
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-6">
-      <h3 className="mb-1 text-base font-semibold tracking-[-0.01em] text-ink">Profile</h3>
-      <p className="mb-5 text-sm text-ink-soft">
-        Your account details are managed by Clerk. Use the avatar menu to change them.
+    <div className="rounded-xl border border-line bg-surface p-5 shadow-xs">
+      <h3 className="text-sm font-semibold tracking-[-0.01em] text-ink">Profile</h3>
+      <p className="mt-0.5 text-xs text-ink-muted">
+        Managed by Clerk. Use the avatar menu in the top bar to change them.
       </p>
-      <dl className="divide-y divide-line">
+
+      <dl className="mt-4 divide-y divide-line-subtle">
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-center justify-between gap-4 py-3">
-            <dt className="text-sm text-ink-soft">{label}</dt>
+            <dt className="shrink-0 text-sm text-ink-soft">{label}</dt>
             <dd className="truncate text-sm font-medium text-ink">{value}</dd>
           </div>
         ))}
@@ -41,7 +43,16 @@ function ProfileTab() {
   )
 }
 
-function SettingsView({ getToken, userId, collections, documents, onCreate, onAddDocuments, onError, onStatus }) {
+function SettingsView({
+  getToken,
+  userId,
+  collections,
+  documents,
+  onCreate,
+  onAddDocuments,
+  onError,
+  onStatus,
+}) {
   const [tab, setTab] = useState('keys')
   const [usage, setUsage] = useState(null)
 
@@ -68,37 +79,46 @@ function SettingsView({ getToken, userId, collections, documents, onCreate, onAd
   }, [userId, getToken, onError])
 
   return (
-    <main className="mx-auto w-full max-w-5xl p-6">
-      <div className="mb-6">
-        <h2 className="mb-6 text-[30px] font-semibold leading-[38px] tracking-[-0.02em] text-ink">
-          Settings
-        </h2>
+    <main className="mx-auto w-full max-w-5xl px-5 py-6 sm:px-8 sm:py-8">
+      <h1 className="font-display text-title text-ink">Settings</h1>
 
-        <div className="flex gap-6 border-b border-line" role="tablist">
-          {TABS.map(({ id, label }) => {
-            const isActive = tab === id
-            return (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => setTab(id)}
-                className={`-mb-px border-b-2 pb-3 text-sm transition-colors ${
-                  isActive
-                    ? 'border-brand font-medium text-brand'
-                    : 'border-transparent text-ink-soft hover:text-ink'
-                }`}
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
+      {/* A segmented control rather than an underline row: at four items the
+          underline reads as a nav bar for the whole app, and this is a switch
+          between panels inside one page. */}
+      <div
+        role="tablist"
+        aria-label="Settings sections"
+        className="mt-5 flex w-fit max-w-full gap-1 overflow-x-auto rounded-xl border border-line bg-surface-sunken p-1"
+      >
+        {TABS.map(({ id, label, Icon }) => {
+          const isActive = tab === id
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`tab-${id}`}
+              aria-selected={isActive}
+              aria-controls={`panel-${id}`}
+              onClick={() => setTab(id)}
+              className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150 ${
+                isActive ? 'bg-surface text-ink shadow-xs' : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              <Icon className={`h-4 w-4 ${isActive ? 'text-brand' : ''}`} />
+              {label}
+            </button>
+          )
+        })}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="flex flex-col gap-6 lg:col-span-2">
+      <div
+        role="tabpanel"
+        id={`panel-${tab}`}
+        aria-labelledby={`tab-${tab}`}
+        className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3"
+      >
+        <div className="flex flex-col gap-5 lg:col-span-2">
           {tab === 'profile' ? <ProfileTab /> : null}
 
           {tab === 'keys' ? (

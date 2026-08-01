@@ -1,56 +1,213 @@
-/* Inter is what the design specifies. Without this the app silently fell back
-   to the system sans-serif, which is why type looked slightly off. */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
-/* Design tokens for the whole app.
-   One accent (indigo) for primary actions, slate neutrals for everything else,
-   and three status colours reserved strictly for document state. */
-/* Dark mode is driven by a class on <html>, not the OS setting alone, so the
-   toggle can override the system preference. */
+/* ---------------------------------------------------------------------------
+   DocuMind design system — "Paper & Ink"
+
+   A reading instrument, not a dashboard. Light mode is warm paper with white
+   sheets floating on it; dark mode is deep neutral with surfaces lifted by
+   lightness rather than by heavier borders.
+
+   Everything below is a token. Components consume utilities that resolve
+   through these variables, so the .dark block re-themes the entire app without
+   a single component knowing that dark mode exists.
+
+   Colour is authored in OKLCH: equal lightness steps read as equal steps to
+   the eye, which sRGB hex does not give you. It is why the greys stay neutral
+   as they darken instead of drifting blue.
+--------------------------------------------------------------------------- */
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-canvas: #fbfaff;
-  --color-sidebar: #f5f4fe;
-  --color-surface: #ffffff;
-  --color-line: #e8e7f5;
-  --color-line-strong: #d4d2ee;
-  --color-ink: #0f172a;
-  --color-ink-soft: #475569;
-  --color-ink-muted: #94a3b8;
-  --color-brand: #4f46e5;
-  --color-brand-hover: #4338ca;
-  --color-brand-soft: #eef2ff;
-  /* Deeper indigo for the wordmark and hover states on the landing page. */
-  --color-brand-deep: #3525cd;
+  /* -- Type ------------------------------------------------------------- */
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /* Reserved for display type only. A serif at large sizes gives a documents
+     product the editorial voice a geometric sans cannot. */
+  --font-display: 'Instrument Serif', ui-serif, Georgia, serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'JetBrains Mono', Menlo, monospace;
+
+  /* Display sizes carry negative tracking; body sizes do not. Large type set
+     at default tracking always looks loose. */
+  --text-display: 4rem;
+  --text-display--line-height: 1.02;
+  --text-display--letter-spacing: -0.03em;
+  --text-title: 2rem;
+  --text-title--line-height: 1.15;
+  --text-title--letter-spacing: -0.022em;
+  --text-heading: 1.25rem;
+  --text-heading--line-height: 1.3;
+  --text-heading--letter-spacing: -0.015em;
+
+  /* -- Surfaces (light) -------------------------------------------------- */
+  --color-canvas: oklch(0.9825 0.0035 85);
+  --color-surface: oklch(1 0 0);
+  --color-surface-sunken: oklch(0.9655 0.0042 85);
+  --color-overlay: oklch(0.21 0.012 275 / 0.32);
+
+  /* -- Lines ------------------------------------------------------------- */
+  --color-line-subtle: oklch(0.945 0.004 85);
+  --color-line: oklch(0.905 0.005 82);
+  --color-line-strong: oklch(0.845 0.007 82);
+
+  /* -- Text -------------------------------------------------------------- */
+  --color-ink: oklch(0.205 0.012 275);
+  --color-ink-soft: oklch(0.442 0.014 272);
+  --color-ink-muted: oklch(0.602 0.012 272);
+  --color-ink-faint: oklch(0.722 0.010 272);
+
+  /* -- Brand ------------------------------------------------------------- */
+  --color-brand: oklch(0.505 0.205 288);
+  --color-brand-hover: oklch(0.445 0.200 288);
+  --color-brand-ink: oklch(0.400 0.180 288);
+  --color-brand-soft: oklch(0.965 0.018 290);
+  --color-brand-line: oklch(0.900 0.045 290);
+  --color-on-brand: oklch(1 0 0);
+
+  /* -- Semantic status ---------------------------------------------------
+     Reserved strictly for document/system state. A green badge anywhere
+     decorative means this rule has been broken. Tokenised so components stop
+     hand-writing four dark: variants each. */
+  --color-ok: oklch(0.520 0.135 158);
+  --color-ok-soft: oklch(0.960 0.035 158);
+  --color-ok-line: oklch(0.885 0.070 158);
+  --color-warn: oklch(0.545 0.130 65);
+  --color-warn-soft: oklch(0.965 0.040 78);
+  --color-warn-line: oklch(0.890 0.080 78);
+  --color-danger: oklch(0.545 0.195 22);
+  --color-danger-soft: oklch(0.963 0.020 22);
+  --color-danger-line: oklch(0.890 0.055 22);
+  --color-neutral-soft: oklch(0.955 0.004 85);
+
+  /* Citation highlight. The one warm accent, and it earns its place by marking
+     the exact span an answer was drawn from. */
+  --color-highlight: oklch(0.930 0.105 92);
+  --color-highlight-ink: oklch(0.380 0.090 70);
+
+  /* -- Radius ------------------------------------------------------------ */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+  --radius-3xl: 1.5rem;
+
+  /* -- Elevation ---------------------------------------------------------
+     Two-layer shadows: a tight contact shadow for the edge, a wide soft one
+     for the lift. A single blurred shadow always reads as fog.
+
+     These deliberately point at a *second* variable instead of holding the
+     value. Tailwind inlines a --shadow-* token into the utility at build time
+     rather than emitting a var() reference the way it does for colours, so a
+     .dark override of --shadow-md would never reach the compiled CSS. Pointing
+     at --elev-md means what gets inlined *is* a var(), which the browser then
+     resolves per theme at runtime. The actual values live below. */
+  --shadow-xs: var(--elev-xs);
+  --shadow-sm: var(--elev-sm);
+  --shadow-md: var(--elev-md);
+  --shadow-lg: var(--elev-lg);
+  --shadow-xl: var(--elev-xl);
+  --shadow-brand: var(--elev-brand);
+
+  /* -- Motion ------------------------------------------------------------
+     Everything decelerates. Nothing in a UI should accelerate away from the
+     pointer that summoned it. */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  --animate-fade-up: fade-up 0.35s var(--ease-out-quint) both;
+  --animate-fade-in: fade-in 0.25s var(--ease-out-quint) both;
+  --animate-scale-in: scale-in 0.18s var(--ease-out-quint) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-caret: caret 1.1s steps(1) infinite;
 }
 
-/* Every utility above resolves through a variable, so redefining the variables
-   here re-themes the whole app without touching a single component. */
-.dark {
-  --color-canvas: #0f0f14;
-  --color-sidebar: #16161f;
-  --color-surface: #1a1a24;
-  --color-line: #2a2a38;
-  --color-line-strong: #3d3d50;
-  --color-ink: #f1f1f6;
-  --color-ink-soft: #a5a5b8;
-  --color-ink-muted: #71718a;
-  /* Indigo is lifted here: #4f46e5 is too dark to read against a dark surface. */
-  --color-brand: #6366f1;
-  --color-brand-hover: #818cf8;
-  --color-brand-soft: #1e1b3c;
-  --color-brand-deep: #a5b4fc;
+/* Elevation values, light. Kept out of @theme on purpose — see the note on
+   --shadow-* above. */
+:root {
+  --elev-xs: 0 1px 2px oklch(0.21 0.012 275 / 0.05);
+  --elev-sm: 0 1px 2px oklch(0.21 0.012 275 / 0.06), 0 2px 6px -1px oklch(0.21 0.012 275 / 0.05);
+  --elev-md: 0 1px 2px oklch(0.21 0.012 275 / 0.06), 0 6px 16px -3px oklch(0.21 0.012 275 / 0.09);
+  --elev-lg: 0 2px 4px oklch(0.21 0.012 275 / 0.05), 0 14px 32px -6px oklch(0.21 0.012 275 / 0.12);
+  --elev-xl: 0 4px 8px oklch(0.21 0.012 275 / 0.05), 0 28px 60px -12px oklch(0.21 0.012 275 / 0.18);
+  --elev-brand: 0 1px 2px oklch(0.505 0.205 288 / 0.20), 0 8px 20px -6px oklch(0.505 0.205 288 / 0.35);
 }
+
+/* ---------------------------------------------------------------------------
+   Dark. Only the variables change.
+
+   Surfaces get *lighter* as they come forward, because shadow alone does not
+   read on a near-black background — the eye uses luminance for depth here and
+   contact shadows for depth in light mode.
+--------------------------------------------------------------------------- */
+.dark {
+  --color-canvas: oklch(0.1650 0.0080 275);
+  --color-surface: oklch(0.2060 0.0100 275);
+  --color-surface-sunken: oklch(0.1440 0.0075 275);
+  --color-overlay: oklch(0.10 0.008 275 / 0.62);
+
+  --color-line-subtle: oklch(0.2580 0.0100 275);
+  --color-line: oklch(0.3050 0.0120 275);
+  --color-line-strong: oklch(0.4020 0.0150 275);
+
+  --color-ink: oklch(0.9650 0.0040 275);
+  --color-ink-soft: oklch(0.7550 0.0120 275);
+  --color-ink-muted: oklch(0.6000 0.0130 275);
+  --color-ink-faint: oklch(0.4780 0.0120 275);
+
+  /* Lifted: the light-mode violet is too dark to read against a dark surface,
+     and a saturated hue on a dark ground reads brighter than it measures. */
+  --color-brand: oklch(0.6650 0.1850 288);
+  --color-brand-hover: oklch(0.7400 0.1550 288);
+  --color-brand-ink: oklch(0.8100 0.1250 288);
+  --color-brand-soft: oklch(0.2800 0.0750 288);
+  --color-brand-line: oklch(0.3750 0.1000 288);
+  --color-on-brand: oklch(0.145 0.02 288);
+
+  --color-ok: oklch(0.7600 0.1500 158);
+  --color-ok-soft: oklch(0.2650 0.0550 158);
+  --color-ok-line: oklch(0.3550 0.0750 158);
+  --color-warn: oklch(0.8000 0.1400 78);
+  --color-warn-soft: oklch(0.2750 0.0550 70);
+  --color-warn-line: oklch(0.3700 0.0750 70);
+  --color-danger: oklch(0.7100 0.1650 22);
+  --color-danger-soft: oklch(0.2750 0.0700 22);
+  --color-danger-line: oklch(0.3800 0.1000 22);
+  --color-neutral-soft: oklch(0.2500 0.0090 275);
+
+  --color-highlight: oklch(0.4600 0.1100 85);
+  --color-highlight-ink: oklch(0.9400 0.0600 90);
+
+  /* Pure black and far heavier: a tinted shadow at light-mode opacity is
+     simply invisible against a near-black canvas. Depth here comes mostly
+     from the surface lightness steps, with the shadow only sharpening the
+     edge. */
+  --elev-xs: 0 1px 2px oklch(0 0 0 / 0.30);
+  --elev-sm: 0 1px 2px oklch(0 0 0 / 0.36), 0 2px 6px -1px oklch(0 0 0 / 0.30);
+  --elev-md: 0 1px 2px oklch(0 0 0 / 0.40), 0 6px 16px -3px oklch(0 0 0 / 0.44);
+  --elev-lg: 0 2px 4px oklch(0 0 0 / 0.40), 0 14px 32px -6px oklch(0 0 0 / 0.52);
+  --elev-xl: 0 4px 8px oklch(0 0 0 / 0.44), 0 28px 60px -12px oklch(0 0 0 / 0.62);
+  --elev-brand: 0 1px 2px oklch(0 0 0 / 0.40), 0 8px 20px -6px oklch(0.665 0.185 288 / 0.30);
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+--------------------------------------------------------------------------- */
 
 :root {
   color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Inter's defaults are conservative. Contextual alternates and proper
+     fractions cost nothing and tidy up numerals in the usage meters. */
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+.dark {
+  color-scheme: dark;
 }
 
 * {
@@ -63,19 +220,139 @@ body,
   min-height: 100%;
 }
 
+html {
+  /* Anchors and programmatic scrolls ease instead of jumping. */
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   background-color: var(--color-canvas);
   color: var(--color-ink);
+  /* The theme toggle would otherwise be an instant, jarring inversion. */
+  transition: background-color 0.3s var(--ease-out-quint);
 }
 
-/* Visible for keyboard users, absent for mouse clicks. */
+/* A visible ring rather than a bare outline: the offset ring reads on both
+   light and dark surfaces, where a single-colour outline disappears on one. */
 :focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
-/* Typing indicator shown while an answer is being generated. */
+::selection {
+  background-color: var(--color-brand-soft);
+  color: var(--color-brand-ink);
+}
+
+/* Scrollbars: present, but not competing with content. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-line-strong);
+  border-radius: 999px;
+  /* Inset via a transparent border so the thumb reads slimmer than its
+     hit target, which stays a comfortable 10px. */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-ink-faint);
+}
+
+/* Strip the UA's search-field decorations; they ignore the design entirely. */
+input[type='search']::-webkit-search-decoration,
+input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Keyframes
+--------------------------------------------------------------------------- */
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* The block caret trailing a streaming answer. */
+@keyframes caret {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Component-level helpers that are genuinely easier as CSS than as utilities
+--------------------------------------------------------------------------- */
+
 .typing-dot {
   animation: typing 1.4s infinite ease-in-out both;
 }
@@ -86,21 +363,173 @@ body {
   animation-delay: -0.16s;
 }
 
-@keyframes typing {
-  0%,
-  80%,
-  100% {
-    transform: scale(0);
-  }
-  40% {
-    transform: scale(1);
-  }
+/* Sweeping highlight for loading placeholders. Better than a pulsing block:
+   it reads as "arriving" rather than "broken". */
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-surface-sunken) 0%,
+    var(--color-line-subtle) 50%,
+    var(--color-surface-sunken) 100%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
 }
 
-/* Respect a reduced-motion preference: keep the dots visible but still. */
+/* Staggered entrance for grids. Anything past the tenth item arrives with the
+   tenth — a 20-item cascade is a delay, not a delight. */
+.stagger > * {
+  animation: var(--animate-fade-up);
+}
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; }
+.stagger > *:nth-child(5) { animation-delay: 160ms; }
+.stagger > *:nth-child(6) { animation-delay: 200ms; }
+.stagger > *:nth-child(7) { animation-delay: 240ms; }
+.stagger > *:nth-child(8) { animation-delay: 280ms; }
+.stagger > *:nth-child(n + 9) { animation-delay: 320ms; }
+
+/* ---------------------------------------------------------------------------
+   Prose — how a generated answer is rendered.
+
+   Scoped tight: only the tags a markdown answer actually produces, sized to
+   sit inside a chat bubble rather than on a documentation page.
+--------------------------------------------------------------------------- */
+
+.prose {
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  color: var(--color-ink);
+}
+
+.prose > * + * {
+  margin-top: 0.85em;
+}
+
+.prose h1,
+.prose h2,
+.prose h3 {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+  margin-top: 1.5em;
+}
+
+.prose h1 { font-size: 1.2em; }
+.prose h2 { font-size: 1.1em; }
+.prose h3 { font-size: 1em; }
+
+.prose ul,
+.prose ol {
+  padding-left: 1.35em;
+}
+
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
+
+.prose li::marker {
+  color: var(--color-ink-faint);
+}
+
+.prose li + li {
+  margin-top: 0.3em;
+}
+
+.prose strong {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.prose em {
+  font-style: italic;
+}
+
+.prose a {
+  color: var(--color-brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background-color: var(--color-surface-sunken);
+  border: 1px solid var(--color-line-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0.1em 0.35em;
+}
+
+.prose pre {
+  background-color: var(--color-surface-sunken);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  font-size: 0.85em;
+  line-height: 1.65;
+}
+
+.prose pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 1em;
+}
+
+.prose blockquote {
+  border-left: 2px solid var(--color-brand-line);
+  padding-left: 0.9rem;
+  color: var(--color-ink-soft);
+  font-style: italic;
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid var(--color-line);
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+}
+
+.prose th {
+  background-color: var(--color-surface-sunken);
+  font-weight: 600;
+}
+
+.prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion. Not "less" motion — none of the decorative kind. Anything
+   conveying state (the typing dots, the caret) stays legible but still.
+--------------------------------------------------------------------------- */
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
   .typing-dot {
     animation: none;
     transform: scale(1);
+    opacity: 1;
   }
 }

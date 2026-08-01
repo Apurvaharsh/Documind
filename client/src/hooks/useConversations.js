@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import {
   deleteConversation as apiDeleteConversation,
   getConversation,
@@ -24,6 +24,11 @@ export function useConversations(getToken, { onError } = {}) {
   const [activeId, setActiveId] = useState(null)
   const [messages, setMessages] = useState([])
   const [isLoadingThread, setIsLoadingThread] = useState(false)
+  // Identifies the most recent open() call. If two overlap — a quick switch
+  // from thread A to B on a slow network — only the latest one is allowed to
+  // write its result, so B's request finishing first cannot be overwritten by
+  // A's arriving late and leaving B's title above A's messages.
+  const openRequestRef = useRef(0)
 
   const refresh = useCallback(async () => {
     const token = await getToken()
@@ -47,12 +52,16 @@ export function useConversations(getToken, { onError } = {}) {
 
   // Start a fresh thread. The id is assigned by the server on the first answer.
   const startNew = useCallback(() => {
+    // Invalidate any in-flight open() so its late result cannot drop the
+    // stored thread's messages into this blank new chat.
+    openRequestRef.current += 1
     setActiveId(null)
     setMessages([])
   }, [])
 
   const open = useCallback(
     async (id) => {
+      const requestId = ++openRequestRef.current
       setActiveId(id)
       setIsLoadingThread(true)
       try {
@@ -62,11 +71,21 @@ export function useConversations(getToken, { onError } = {}) {
         }
 
         const data = await getConversation(token, id)
+        // A newer open() has superseded this one; drop the stale result.
+        if (requestId !== openRequestRef.current) {
+          return
+        }
         setMessages((data.conversation.queries || []).flatMap(toMessages))
       } catch (error) {
-        onError?.(error.message)
+        if (requestId === openRequestRef.current) {
+          onError?.(error.message)
+        }
       } finally {
-        setIsLoadingThread(false)
+        // Only the latest request owns the loading flag, or an early-finishing
+        // stale one would clear the spinner while the current load runs.
+        if (requestId === openRequestRef.current) {
+          setIsLoadingThread(false)
+        }
       }
     },
     [getToken, onError]
@@ -84,18 +103,20 @@ export function useConversations(getToken, { onError } = {}) {
         setConversations((current) => current.filter((entry) => entry.id !== id))
 
         // Deleting the open thread leaves the pane on a blank new chat.
-        setActiveId((current) => {
-          if (current === id) {
-            setMessages([])
-            return null
-          }
-          return current
-        })
+        // activeId is a dependency, so it is read directly here rather than
+        // through a setState updater — an updater must be pure, and the old
+        // one called setMessages from inside setActiveId, which double-fired
+        // under StrictMode.
+        if (activeId === id) {
+          openRequestRef.current += 1
+          setActiveId(null)
+          setMessages([])
+        }
       } catch (error) {
         onError?.(error.message)
       }
     },
-    [getToken, onError]
+    [getToken, onError, activeId]
   )
 
   return {

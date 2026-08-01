@@ -215,6 +215,20 @@ const askQuestion = async (req, res) => {
 // Forwards the Python SSE stream to the browser while accumulating the answer,
 // so the Query row can still be written once the stream finishes.
 const askQuestionStream = async (req, res) => {
+    // Aborts the upstream generation the moment the browser hangs up — a Stop
+    // press, a navigation, a closed tab. Without it the model kept running to
+    // completion for an answer nobody was reading, which on CPU is 25–70s of
+    // wasted work per Stop, and the forwarding loop went on writing to a dead
+    // socket.
+    const upstream = new AbortController();
+    let clientGone = false;
+    req.on('close', () => {
+        if (!res.writableEnded) {
+            clientGone = true;
+            upstream.abort();
+        }
+    });
+
     try {
         const { question, documentId, collectionId, conversationId } = req.body;
 
@@ -264,6 +278,7 @@ const askQuestionStream = async (req, res) => {
                 document_ids: scope.qdrantDocIds,
                 history: previous.reverse(),
             }),
+            signal: upstream.signal,
         });
 
         if (!aiResponse.ok || !aiResponse.body) {
@@ -293,6 +308,8 @@ const askQuestionStream = async (req, res) => {
         let buffer = '';
 
         for await (const chunk of aiResponse.body) {
+            if (clientGone) break;
+
             const text = Buffer.from(chunk).toString('utf8');
             res.write(text);
 
@@ -315,6 +332,13 @@ const askQuestionStream = async (req, res) => {
                     // A partial frame is harmless - it arrives complete next pass.
                 }
             }
+        }
+
+        // The client stopped mid-answer. Its own UI marks the turn as stopped,
+        // so a truncated answer is not persisted — reopening the thread simply
+        // will not show this half-written turn.
+        if (clientGone) {
+            return;
         }
 
         const responseMs = Date.now() - startedAt;
@@ -342,6 +366,13 @@ const askQuestionStream = async (req, res) => {
 
         res.end();
     } catch (error) {
+        // A disconnect aborts the upstream fetch, which surfaces here as an
+        // AbortError. That is the expected outcome of Stop, not a failure, and
+        // the socket is already gone so there is nothing to write to.
+        if (clientGone || error.name === 'AbortError') {
+            return;
+        }
+
         console.error('Error streaming answer:', error);
 
         if (res.headersSent) {

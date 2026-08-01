@@ -4,7 +4,47 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>client</title>
+    <title>DocuMind — Ask questions across your PDFs</title>
+    <meta
+      name="description"
+      content="Upload your PDFs and get answers with the exact passages they came from."
+    />
+    <!-- Matches the browser chrome to the app canvas in each theme. -->
+    <meta name="theme-color" content="#fbfaf7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121216" media="(prefers-color-scheme: dark)" />
+
+    <!--
+      Fonts are linked here rather than @import-ed from the stylesheet: an
+      @import cannot start downloading until the CSS itself has arrived, so it
+      serialises two round trips that should overlap.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+
+    <script>
+      // Applies the stored theme before first paint. Without this the app
+      // renders light, then snaps to dark once React mounts — a white flash on
+      // every single load for anyone using dark mode.
+      // Kept in sync with STORAGE_KEY in src/hooks/useTheme.js.
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('documind-theme')
+          var dark =
+            saved === 'dark' ||
+            (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (dark) {
+            document.documentElement.classList.add('dark')
+            document.documentElement.style.colorScheme = 'dark'
+          }
+        } catch (e) {
+          /* private mode blocks localStorage; light is a fine fallback */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
